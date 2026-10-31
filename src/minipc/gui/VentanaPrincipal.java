@@ -623,14 +623,14 @@ public class VentanaPrincipal extends JFrame {
     // Botón "Siguiente": 1 segundo de CPU
     private void pasoManual(){
         if (!validarHayProcesos()) return;
-        if (gestor.esperandoTeclado()) {
-            // El tiempo ya corre solo; no se suman segundos extra con clics
-            avisar("El proceso está esperando un valor de teclado.\nIngreselo en la Pantalla y presione Enter.");
+        if (gestor.bloqueadoPorTeclado()) {
+            // Todos los procesos esperan el teclado: el tiempo ya corre solo; no se suman segundos extra con clics
+            avisar("Todos los procesos están esperando un valor de teclado.\nIngreselo en la Pantalla y presione Enter.");
             return;
         }
         gestor.ejecutarUnPaso();
         actualizarVista();
-        if (gestor.esperandoTeclado()) {
+        if (gestor.bloqueadoPorTeclado()) {
             iniciarEsperaTeclado();
         } else if (!gestor.hayProcesos()) {
             finEjecucion();
@@ -642,9 +642,9 @@ public class VentanaPrincipal extends JFrame {
         if (!modoAutomatico && !timerEspera.isRunning()) timerEspera.start();
     }
 
-    // Cada segundo real de espera: suma 1 s al reloj y al tiempo del proceso detenido en INT 09H
+    // Cada segundo real con la CPU ociosa esperando el teclado: suma 1 s al reloj
     private void segundoDeEspera(){
-        if (gestor == null || !gestor.esperandoTeclado() || modoAutomatico) {
+        if (gestor == null || !gestor.bloqueadoPorTeclado() || modoAutomatico) {
             timerEspera.stop();
             return;
         }
@@ -711,7 +711,7 @@ public class VentanaPrincipal extends JFrame {
         String texto = txtTeclado.getText().trim();
         try {
             gestor.ingresarTeclado(Integer.parseInt(texto));
-            timerEspera.stop();             // ya llegó el valor: el reloj deja de correr solo
+            if (!gestor.bloqueadoPorTeclado()) timerEspera.stop();   // ya hay algo que ejecutar: el reloj deja de correr solo
             txtTeclado.setText("");
             if (modoAutomatico && !timerAuto.isRunning()) timerAuto.start();
         } catch (NumberFormatException e) {
