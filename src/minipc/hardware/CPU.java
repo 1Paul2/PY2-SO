@@ -92,36 +92,13 @@ public class CPU {
 
     public void setDisco(Disco disco){ this.disco = disco; }
 
+    // Correccion - Poll: se quita la lectura desde la memoria virtual del disco; el programa
+    // completo está en memoria principal (la memoria virtual se rehace con paginación)
     // Lee la instrucción apuntada por el PC, validando que esté dentro del proceso.
-    // El PC es una dirección lógica: base + desplazamiento. Si el desplazamiento cae
-    // en la parte del programa que no cupo en RAM, la instrucción se lee de la
-    // memoria virtual del disco.
     public void fetch(){
-        int base = bcpActual.getDireccionBase();
-        memoria.validarAcceso(PC, base, bcpActual.getTamanioProceso());
-        int desplazamiento = PC - base;
-        if (!bcpActual.usaMemoriaVirtual() || desplazamiento < bcpActual.getEnRAM()) {
-            IR = memoria.leer(PC);
-        } else {
-            int dirVirtual = bcpActual.getBaseVirtual() + (desplazamiento - bcpActual.getEnRAM());
-            IR = disco.leer(dirVirtual);
-            if (!bcpActual.isAvisoVirtual()) {
-                imprimir("[SO] P" + bcpActual.getIdProceso() + " ejecuta desde memoria virtual (disco ["
-                    + dirVirtual + "])");
-                bcpActual.setAvisoVirtual(true);
-            }
-        }
+        memoria.validarAcceso(PC, bcpActual.getDireccionBase(), bcpActual.getTamanioProceso());
+        IR = memoria.leer(PC);
         PC = PC + 1;
-    }
-
-    // E: no aplica
-    // S: int - posición del disco de la instrucción apuntada por el PC si está en memoria virtual, o -1
-    // R: ninguna
-    public int posicionVirtualPC(){
-        if (bcpActual == null || !bcpActual.usaMemoriaVirtual()) return -1;
-        int desplazamiento = PC - bcpActual.getDireccionBase();
-        if (desplazamiento < bcpActual.getEnRAM() || desplazamiento >= bcpActual.getTamanioProceso()) return -1;
-        return bcpActual.getBaseVirtual() + (desplazamiento - bcpActual.getEnRAM());
     }
 
     // Correccion - Poll: se quitan los pesos; cada instrucción dura 1 segundo, así que

@@ -79,7 +79,6 @@ public class VentanaPrincipal extends JFrame {
     private JTable tablaMemoria;
     private String[] duenoPosicion = new String[0];   // "S.O.", "P1"  por posición
     private int posicionPC = -1;
-    private int posicionPCVirtual = -1;   // posición del disco del PC si ejecuta desde memoria virtual
 
     // ---- CPU ----
     private JLabel lblProcesoActual, lblInstruccion;
@@ -355,7 +354,7 @@ public class VentanaPrincipal extends JFrame {
     // -------------------------- Columna central --------------------------
 
     // Correccion - Poll: se quita la línea de entrada del teclado (etiqueta, campo y botón Enviar)
-    // debajo de la pantalla
+    // debajo de la pantalla, y la leyenda "(+N virtual)" de la memoria virtual partida
     private JPanel crearColumnaCentral(){
         // Memoria principal: mapa visual + tabla
         tarjetaMemoria = new Tarjeta("Memoria principal", Tema.VERDE);
@@ -382,7 +381,6 @@ public class VentanaPrincipal extends JFrame {
         leyenda.add(itemLeyenda("S.O. / BCP", Tema.NARANJA_SO));
         leyenda.add(itemLeyenda("Libre", new Color(0xCBD5D0)));
         leyenda.add(itemLeyenda("PC", Tema.ROJO));
-        leyenda.add(itemLeyenda("(+N virtual) = parte en disco", Tema.MORADO));
         mapaConLeyenda.add(leyenda, BorderLayout.SOUTH);
 
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, mapaConLeyenda, Componentes.scroll(tablaMemoria));
@@ -752,7 +750,8 @@ public class VentanaPrincipal extends JFrame {
         tarjetaCola.setExtra(gestor.getTodosLosProcesos().size() + " procesos · " + trabajos + " esperando memoria");
     }
 
-    // Correccion - Poll: se quita el estado del dispositivo teclado
+    // Correccion - Poll: se quita el estado del dispositivo teclado, y la memoria usada se cuenta
+    // con el alcance completo del proceso (ya no hay parte en memoria virtual)
     private void actualizarRecursos(){
         if (gestor == null) {
             int usuario = configuracion.getMemoriaPrincipal() - configuracion.getMemoriaSistema();
@@ -773,7 +772,7 @@ public class VentanaPrincipal extends JFrame {
         for (BCP b : gestor.getTodosLosProcesos()) {
             String e = b.getEstado();
             if (!"Nuevo".equals(e) && !"Finalizado".equals(e)) {
-                usuarioUsado += b.getEnRAM();
+                usuarioUsado += b.getTamanioProceso();
                 if (b.getDireccionBCP() >= 0) bcps++;
             }
         }
@@ -801,7 +800,8 @@ public class VentanaPrincipal extends JFrame {
         dispDisco.setColores(archivos + " archivo(s)", Tema.MORADO, Tema.MORADO_CLARO);
     }
 
-    // Correccion - Poll: ya no muestra "N de M s" según el peso; cada instrucción dura 1 s
+    // Correccion - Poll: ya no muestra "N de M s" según el peso; cada instrucción dura 1 s.
+    // Tampoco muestra "desde memoria virtual" (memoria virtual partida)
     private void actualizarCPU(){
         CPU cpu = gestor == null ? null : gestor.getCpu();
         BCP actual = cpu == null ? null : cpu.getBcpActual();
@@ -842,16 +842,14 @@ public class VentanaPrincipal extends JFrame {
         valoresRegistro[9].setText(String.valueOf(cpu.getAL()));
 
         if (actual != null && cpu.getIR() != null && !cpu.getIR().isEmpty()) {
-            boolean desdeVirtual = actual.usaMemoriaVirtual()
-                && cpu.getPC() - 1 - actual.getDireccionBase() >= actual.getEnRAM();
-            lblInstruccion.setText("Última instrucción: " + cpu.getIR() + "  ·  1 s"
-                + (desdeVirtual ? "  ·  desde memoria virtual" : ""));
+            lblInstruccion.setText("Última instrucción: " + cpu.getIR() + "  ·  1 s");
         } else {
             lblInstruccion.setText(actual == null ? "Instrucción en curso: -" : "Lista para la primera instrucción");
         }
     }
 
-    // Correccion - Poll: el tiempo de inicio se muestra en segundos desde 0, no en hora real
+    // Correccion - Poll: el tiempo de inicio se muestra en segundos desde 0, no en hora real,
+    // y el alcance ya no se divide en "RAM + virtual"
     private void actualizarBCP(){
         BCP b = (gestor == null) ? null : gestor.getCpu().getBcpActual();
         panelPila.setBCP(b);
@@ -863,9 +861,7 @@ public class VentanaPrincipal extends JFrame {
         valoresBCP[0].setText("P" + b.getIdProceso());
         distEstadoBCP.setEstado(b.getEstado());
         valoresBCP[2].setText(String.valueOf(b.getDireccionBase()));
-        valoresBCP[3].setText(b.usaMemoriaVirtual()
-            ? b.getTamanioProceso() + " (" + b.getEnRAM() + " RAM + " + b.getEnVirtual() + " virtual)"
-            : b.getTamanioProceso() + " posiciones");
+        valoresBCP[3].setText(b.getTamanioProceso() + " posiciones");
         valoresBCP[4].setText(String.valueOf(b.getPrioridad()));
         valoresBCP[5].setText("CPU " + b.getCpuId());
         valoresBCP[6].setText(b.getTiempoInicio() >= 0 ? "t = " + b.getTiempoInicio() + " s" : "-");
@@ -874,6 +870,8 @@ public class VentanaPrincipal extends JFrame {
         valoresBCP[9].setText(String.join(", ", b.getArchivosAbiertos()));
     }
 
+    // Correccion - Poll: el dueño de cada posición usa el alcance completo y el PC siempre está
+    // en RAM (ya no hay parte del programa en memoria virtual)
     private void actualizarMemoria(){
         mapaMemoria.setGestor(gestor);
         int total = gestor == null ? configuracion.getMemoriaPrincipal() : gestor.getMemoria().getTamanoTotal();
@@ -890,7 +888,7 @@ public class VentanaPrincipal extends JFrame {
         for (BCP b : gestor.getTodosLosProcesos()) {
             String e = b.getEstado();
             if ("Nuevo".equals(e) || "Finalizado".equals(e) || b.getDireccionBase() < 0) continue;
-            for (int i = b.getDireccionBase(); i < b.getDireccionBase() + b.getEnRAM() && i < total; i++) {
+            for (int i = b.getDireccionBase(); i < b.getDireccionBase() + b.getTamanioProceso() && i < total; i++) {
                 duenoPosicion[i] = "P" + b.getIdProceso();
             }
             if (b.getDireccionBCP() >= 0) duenoPosicion[b.getDireccionBCP()] = "BCP P" + b.getIdProceso();
@@ -904,7 +902,7 @@ public class VentanaPrincipal extends JFrame {
         }
 
         BCP actual = gestor.getCpu().getBcpActual();
-        int nuevoPC = (actual == null || gestor.getCpu().posicionVirtualPC() >= 0) ? -1 : gestor.getCpu().getPC();
+        int nuevoPC = actual == null ? -1 : gestor.getCpu().getPC();
         if (nuevoPC != posicionPC && nuevoPC >= 0 && nuevoPC < total) {
             tablaMemoria.scrollRectToVisible(tablaMemoria.getCellRect(Math.min(total - 1, nuevoPC + 3), 0, true));
             tablaMemoria.scrollRectToVisible(tablaMemoria.getCellRect(nuevoPC, 0, true));
@@ -913,6 +911,8 @@ public class VentanaPrincipal extends JFrame {
         tablaMemoria.repaint();
     }
 
+    // Correccion - Poll: la zona virtual del disco ya no marca partes de procesos ni sigue al PC
+    // (memoria virtual partida); queda reservada para la paginación
     private void actualizarDisco(){
         if (gestor == null) {
             modeloDisco.setRowCount(0);
@@ -924,26 +924,12 @@ public class VentanaPrincipal extends JFrame {
         tarjetaDisco.setExtra(total + " · " + d.virtualUsada() + "/" + d.getTamanoMemoriaVirtual() + " virtual");
         if (modeloDisco.getRowCount() != total) modeloDisco.setRowCount(total);
         int inicioVirtual = total - d.getTamanoMemoriaVirtual();
-        String[] duenoVirtual = new String[total];
-        for (BCP b : gestor.getTodosLosProcesos()) {
-            if (!b.usaMemoriaVirtual() || "Finalizado".equals(b.getEstado())) continue;
-            for (int i = b.getBaseVirtual(); i < b.getBaseVirtual() + b.getEnVirtual() && i < total; i++) {
-                duenoVirtual[i] = "Virtual P" + b.getIdProceso();
-            }
-        }
-        int nuevoPCVirtual = gestor.getCpu().posicionVirtualPC();
         for (int i = 0; i < total; i++) {
-            String zona = i < d.getTamanoIndice() ? "Índice"
-                : (i >= inicioVirtual ? (duenoVirtual[i] != null ? duenoVirtual[i] : "Virtual") : "Archivos");
+            String zona = i < d.getTamanoIndice() ? "Índice" : (i >= inicioVirtual ? "Virtual" : "Archivos");
             modeloDisco.setValueAt(i, i, 0);
             modeloDisco.setValueAt(d.leer(i), i, 1);
             modeloDisco.setValueAt(zona, i, 2);
         }
-        if (nuevoPCVirtual >= 0 && nuevoPCVirtual != posicionPCVirtual) {
-            tablaDisco.scrollRectToVisible(tablaDisco.getCellRect(Math.min(total - 1, nuevoPCVirtual + 3), 0, true));
-            tablaDisco.scrollRectToVisible(tablaDisco.getCellRect(nuevoPCVirtual, 0, true));
-        }
-        posicionPCVirtual = nuevoPCVirtual;
         tablaDisco.repaint();
     }
 
@@ -1215,6 +1201,8 @@ public class VentanaPrincipal extends JFrame {
 
     /** Tabla de disco: índice en verde, memoria virtual en morado. */
     private class RenderDisco extends DefaultTableCellRenderer {
+        // Correccion - Poll: se quitan el color por proceso en la zona virtual y la marca del PC
+        // (memoria virtual partida)
         @Override
         public Component getTableCellRendererComponent(JTable t, Object v, boolean s, boolean f, int r, int c){
             JLabel l = (JLabel) super.getTableCellRendererComponent(t, v, s, f, r, c);
@@ -1222,20 +1210,12 @@ public class VentanaPrincipal extends JFrame {
             String valor = String.valueOf(t.getModel().getValueAt(r, 1));
             Color fondo = Color.WHITE;
             if ("Índice".equals(zona)) fondo = valor.isEmpty() ? Tema.aclarar(Tema.VERDE, 0.92f) : Tema.VERDE_CLARO;
-            else if (zona.startsWith("Virtual P")) {
-                int id = Integer.parseInt(zona.substring("Virtual P".length()));
-                fondo = Tema.aclarar(Tema.colorProceso(id), 0.7f);    // parte del proceso en memoria virtual
-            }
             else if ("Virtual".equals(zona)) fondo = Tema.aclarar(Tema.MORADO, 0.92f);
             else if (!valor.isEmpty()) fondo = Tema.aclarar(Tema.MORADO, 0.8f);
-            boolean esPC = r == posicionPCVirtual;
-            Color texto = c == 2 ? Tema.TEXTO_SUAVE : Tema.TEXTO;
-            if (esPC) { fondo = Tema.ROJO_CLARO; texto = Tema.ROJO; }
             l.setBackground(s ? Tema.VERDE_CLARO : fondo);
-            l.setForeground(texto);
-            l.setFont(c == 1 ? Tema.MONO_NORMAL : (esPC ? Tema.PEQUENA_B : Tema.PEQUENA));
+            l.setForeground(c == 2 ? Tema.TEXTO_SUAVE : Tema.TEXTO);
+            l.setFont(c == 1 ? Tema.MONO_NORMAL : Tema.PEQUENA);
             l.setBorder(new EmptyBorder(0, 8, 0, 8));
-            if (c == 0 && esPC) l.setText("▶ " + v);
             return l;
         }
     }
@@ -1730,6 +1710,8 @@ public class VentanaPrincipal extends JFrame {
             return lista;
         }
 
+        // Correccion - Poll: cada bloque se dibuja con el alcance completo; se quitan la etiqueta
+        // "(+N virtual)" y el aviso "PC en memoria virtual" (memoria virtual partida)
         @Override
         protected void paintComponent(Graphics g){
             Graphics2D g2 = (Graphics2D) g.create();
@@ -1787,7 +1769,7 @@ public class VentanaPrincipal extends JFrame {
             int yPCBloque = -1, altoPCBloque = 0;
             for (BCP b : bloques) {
                 int y = Math.max(arriba + (int) Math.round(b.getDireccionBase() * escala), finAnterior);
-                int alto = Math.max(18, (int) Math.round(b.getEnRAM() * escala));
+                int alto = Math.max(18, (int) Math.round(b.getTamanioProceso() * escala));
                 Color c = Tema.colorProceso(b.getIdProceso());
                 g2.setColor(c);
                 g2.fillRoundRect(x, y, w, alto, 10, 10);
@@ -1802,8 +1784,7 @@ public class VentanaPrincipal extends JFrame {
                 g2.setColor(Color.WHITE);
                 g2.setFont(Tema.PEQUENA_B);
                 String texto = "P" + b.getIdProceso() + "  Base " + b.getDireccionBase()
-                    + " · Alcance " + b.getTamanioProceso()
-                    + (b.usaMemoriaVirtual() ? " (+" + b.getEnVirtual() + " virtual)" : "");
+                    + " · Alcance " + b.getTamanioProceso();
                 if (g2.getFontMetrics().stringWidth(texto) > w - 8) texto = "P" + b.getIdProceso();
                 dibujarCentrado(g2, texto, x, y, w, alto);
                 if (y - ultimaEtiqueta >= 13) {
@@ -1814,27 +1795,13 @@ public class VentanaPrincipal extends JFrame {
             }
 
             // Flecha del PC
-            if (enCpu != null && yPCBloque >= 0 && gestor.getCpu().posicionVirtualPC() < 0) {
+            if (enCpu != null && yPCBloque >= 0) {
                 int pc = gestor.getCpu().getPC();
-                double rel = (pc - enCpu.getDireccionBase() + 0.5) / Math.max(1, enCpu.getEnRAM());
+                double rel = (pc - enCpu.getDireccionBase() + 0.5) / Math.max(1, enCpu.getTamanioProceso());
                 int yPC = yPCBloque + (int) Math.round(Math.max(0, Math.min(1, rel)) * altoPCBloque);
                 int xf = x + w + 2;
                 g2.setColor(Tema.ROJO);
                 g2.fillPolygon(new int[]{xf, xf + 10, xf + 10}, new int[]{yPC, yPC - 6, yPC + 6}, 3);
-            }
-
-            // Aviso cuando el PC está en la parte del programa que vive en memoria virtual
-            int pcVirtual = gestor.getCpu().posicionVirtualPC();
-            if (pcVirtual >= 0) {
-                String aviso = "PC en memoria virtual · disco [" + pcVirtual + "]";
-                g2.setFont(Tema.PEQUENA_B);
-                FontMetrics fm = g2.getFontMetrics();
-                int aw = fm.stringWidth(aviso) + 16, ah = fm.getHeight() + 6;
-                int ax = x + (w - aw) / 2, ay = arriba + h - ah - 6;
-                g2.setColor(Tema.ROJO_CLARO);
-                g2.fillRoundRect(ax, ay, aw, ah, ah, ah);
-                g2.setColor(Tema.ROJO);
-                g2.drawString(aviso, ax + 8, ay + (ah + fm.getAscent()) / 2 - 2);
             }
 
             etiquetaDireccion(g2, total - 1, arriba + h - 10);

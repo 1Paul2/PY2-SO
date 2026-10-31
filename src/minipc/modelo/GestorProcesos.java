@@ -59,17 +59,17 @@ public class GestorProcesos {
 
     // ===================== Carga de programas =====================
 
+    // Correccion - Poll: el límite ya no suma la memoria virtual; el programa debe caber en la
+    // memoria de usuario (la memoria virtual se rehace con paginación)
     // E: instrucciones (List<Instruccion>) - programa ya validado; nombreArchivo (String)
     // S: BCP - el proceso creado
     // R: lanza RuntimeException si el programa no cabe en memoria o no hay espacio en disco
     public BCP cargarPrograma(List<Instruccion> instrucciones, String nombreArchivo){
         int espacioUsuario = memoria.getTamanoTotal() - memoria.getInicioUsuario();
-        int espacioVirtual = disco.getTamanoMemoriaVirtual();
-        if (instrucciones.size() > espacioUsuario + espacioVirtual) {
-            // Desbordamiento de memoria: ni la RAM de usuario más la memoria virtual alcanzan
+        if (instrucciones.size() > espacioUsuario) {
+            // Desbordamiento de memoria: el programa es más grande que toda la memoria de usuario
             throw new RuntimeException("Desbordamiento de memoria: " + nombreArchivo + " ocupa "
-                + instrucciones.size() + " posiciones y el máximo es " + (espacioUsuario + espacioVirtual)
-                + " (" + espacioUsuario + " de memoria de usuario + " + espacioVirtual + " de memoria virtual)");
+                + instrucciones.size() + " posiciones y la memoria de usuario tiene " + espacioUsuario);
         }
 
         List<String> lineas = new ArrayList<>();
