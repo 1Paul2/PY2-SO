@@ -48,16 +48,15 @@ public class BCP {
     private boolean flagGuardado;
     private int tiempoFin;
     private int direccionBCP;
-    private int enRAM;            // instrucciones cargadas en memoria principal
-    private int baseVirtual;      // dirección del disco donde está el resto (-1 si todo cabe en RAM)
-    private boolean avisoVirtual; // ya se avisó en pantalla que leyó de memoria virtual
-    private int ahGuardado;            // registro AH (función de INT 21H)
+    private int ahGuardado;           // registro AH (función de INT 21H)
     private int alGuardado;            // registro AL (dato que se lee/escribe con INT 21H)
     private String dxTextoGuardado;    // nombre de archivo guardado en DX (MOV DX, "archivo.txt")
     private int desplazamientoPC;      // posición del PC dentro del programa al suspenderse (-1 si no)
     private java.util.Map<String, Integer> punterosLectura;   // próxima línea a leer de cada archivo abierto
             
-        // E: idProceso (int) - identificador del proceso; estado (String) 
+        // Correccion - Poll: se quitan enRAM, baseVirtual y avisoVirtual (memoria virtual
+        // "mitad en RAM, mitad en disco"; se rehace con paginación)
+        // E: idProceso (int) - identificador del proceso; estado (String)
         // S: no aplica (constructor)
         // R: ninguna
         public BCP(int idProceso, String estado){
@@ -76,9 +75,6 @@ public class BCP {
             this.tiempoFin = -1;
             this.flagGuardado = false;
             this.direccionBCP = -1;
-            this.enRAM = 0;
-            this.baseVirtual = -1;
-            this.avisoVirtual = false;
             this.ahGuardado = 0;
             this.alGuardado = 0;
             this.dxTextoGuardado = null;
@@ -296,6 +292,7 @@ public class BCP {
             return sb.append("]").toString();
         }
 
+        // Correccion - Poll: se quitan los campos RAM y Virtual (memoria virtual partida)
         // E: no aplica
         // S: String - el BCP serializado en una línea, tal como se guarda en la memoria del S.O.
         //    "Sig" es la DIRECCIÓN de memoria del siguiente BCP en su cola (-1 si es el último)
@@ -309,36 +306,7 @@ public class BCP {
                 + "|AH=" + ahGuardado + "|AL=" + alGuardado
                 + "|IR=" + irGuardado + "|Pila=" + pilaTexto()
                 + "|Base=" + direccionBase + "|Alcance=" + tamanioProceso
-                + "|RAM=" + enRAM + "|Virtual=" + (usaMemoriaVirtual() ? baseVirtual + "+" + getEnVirtual() : "no")
                 + "|Sig=" + sig;
-        }
-
-        // ---- Memoria virtual ----
-        public int getEnRAM(){
-            return enRAM; 
-        }
-        public void setEnRAM(int n){
-            this.enRAM = n; 
-        }
-        public int getBaseVirtual(){
-            return baseVirtual; 
-        }
-        public void setBaseVirtual(int dir){
-            this.baseVirtual = dir; 
-        }
-        public boolean isAvisoVirtual(){
-            return avisoVirtual; 
-        }
-        public void setAvisoVirtual(boolean a){
-            this.avisoVirtual = a; 
-        }
-
-        // Instrucciones que no cupieron en RAM y están en la memoria virtual del disco
-        public int getEnVirtual(){
-            return tamanioProceso - enRAM; 
-        }
-        public boolean usaMemoriaVirtual(){
-            return baseVirtual >= 0 && getEnVirtual() > 0; 
         }
 
         // ---- INT 21H y suspensión ----

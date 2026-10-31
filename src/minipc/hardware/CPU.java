@@ -19,10 +19,7 @@ public class CPU {
     private Disco disco;          // para leer la parte del programa que está en memoria virtual
     private BCP bcpActual;
     private boolean flagIgual;
-    private int segundosRestantes = 0;
-    private String[] instrActual;
     private List<String> pantalla = new ArrayList<>();
-    private boolean solicitudTeclado = false;
 
     public CPU(Memoria memoria){
         this.memoria = memoria;
@@ -69,7 +66,7 @@ public class CPU {
     public boolean isFlagIgual(){ return flagIgual; }
     public void setFlagIgual(boolean flag){ this.flagIgual = flag; }
 
-    // ===== Pantalla y teclado =====
+    // ===== Pantalla =====
 
     // E: texto (String) - línea a mostrar en la pantalla del Mini PC
     // S: no aplica (void)
@@ -77,18 +74,6 @@ public class CPU {
     public void imprimir(String texto){ pantalla.add(texto); }
     public List<String> getPantalla(){ return pantalla; }
     public void limpiarPantalla(){ pantalla.clear(); }
-
-    // E: no aplica
-    // S: boolean - true si la última instrucción fue INT 09H (pide teclado); se reinicia al leerlo
-    // R: ninguna
-    public boolean consumirSolicitudTeclado(){
-        boolean s = solicitudTeclado;
-        solicitudTeclado = false;
-        return s;
-    }
-
-    // Para mostrar en la GUI cuántos segundos le faltan a la instrucción actual
-    public int getSegundosRestantes(){ return segundosRestantes; }
 
     // E: no aplica
     // S: int - primera posición fuera del programa actual (base + alcance)
@@ -107,78 +92,36 @@ public class CPU {
 
     public void setDisco(Disco disco){ this.disco = disco; }
 
+    // Correccion - Poll: se quita la lectura desde la memoria virtual del disco; el programa
+    // completo está en memoria principal (la memoria virtual se rehace con paginación)
     // Lee la instrucción apuntada por el PC, validando que esté dentro del proceso.
-    // El PC es una dirección lógica: base + desplazamiento. Si el desplazamiento cae
-    // en la parte del programa que no cupo en RAM, la instrucción se lee de la
-    // memoria virtual del disco.
     public void fetch(){
-        int base = bcpActual.getDireccionBase();
-        memoria.validarAcceso(PC, base, bcpActual.getTamanioProceso());
-        int desplazamiento = PC - base;
-        if (!bcpActual.usaMemoriaVirtual() || desplazamiento < bcpActual.getEnRAM()) {
-            IR = memoria.leer(PC);
-        } else {
-            int dirVirtual = bcpActual.getBaseVirtual() + (desplazamiento - bcpActual.getEnRAM());
-            IR = disco.leer(dirVirtual);
-            if (!bcpActual.isAvisoVirtual()) {
-                imprimir("[SO] P" + bcpActual.getIdProceso() + " ejecuta desde memoria virtual (disco ["
-                    + dirVirtual + "])");
-                bcpActual.setAvisoVirtual(true);
-            }
-        }
+        memoria.validarAcceso(PC, bcpActual.getDireccionBase(), bcpActual.getTamanioProceso());
+        IR = memoria.leer(PC);
         PC = PC + 1;
     }
 
+    // Correccion - Poll: se quitan los pesos; cada instrucción dura 1 segundo, así que
+    // cada tick hace fetch, decode y execute completos
     // E: no aplica
-    // S: int - posición del disco de la instrucción apuntada por el PC si está en memoria virtual, o -1
-    // R: ninguna
-    public int posicionVirtualPC(){
-        if (bcpActual == null || !bcpActual.usaMemoriaVirtual()) return -1;
-        int desplazamiento = PC - bcpActual.getDireccionBase();
-        if (desplazamiento < bcpActual.getEnRAM() || desplazamiento >= bcpActual.getTamanioProceso()) return -1;
-        return bcpActual.getBaseVirtual() + (desplazamiento - bcpActual.getEnRAM());
-    }
-
-    // E: no aplica
-    // S: no aplica (void) - avanza 1 segundo de CPU; la instrucción se ejecuta
-    //    cuando se cumplen los segundos de su peso
+    // S: no aplica (void) - avanza 1 segundo de CPU y ejecuta una instrucción
     // R: debe haber un proceso en la CPU
     public void tick(){
         if(bcpActual == null) return;
-        if(segundosRestantes == 0){
-            fetch();
-            instrActual = decode(IR);
-            segundosRestantes = Pesos.de(instrActual[0], arg(instrActual, 1));
-        }
-        segundosRestantes--;
-        if(segundosRestantes == 0){
-            execute(instrActual);
-            instrActual = null;
-        }
+        fetch();
+        execute(decode(IR));
     }
 
-    // Ejecuta una instrucción completa, sin importar su peso (útil para pruebas)
-    public void pasoAPaso(){
-        do {
-            tick();
-        } while(segundosRestantes > 0);
-    }
-
+    // Correccion - Poll: ya no espera a que termine el peso; ejecuta tick por tick
     public void ejecutarTodo(){
         while(!programaTerminado()){
-            pasoAPaso();
+            tick();
         }
     }
 
+    // Correccion - Poll: ya no revisa los segundos restantes del peso
     public boolean programaTerminado(){
-        return bcpActual == null || (segundosRestantes == 0 && PC >= getLimite());
-    }
-
-    // Llamalo desde Despachador.despachar() al cargar un proceso nuevo
-    public void reiniciarInstruccion(){
-        segundosRestantes = 0;
-        instrActual = null;
-        solicitudTeclado = false;
+        return bcpActual == null || PC >= getLimite();
     }
 
     // ===== Execute =====
@@ -436,12 +379,12 @@ public class CPU {
         }
     }
 
+    // Correccion - Poll: se quita INT 09H (entrada de teclado), en el proyecto 2 ya no se usa
     private void ejecutarINT(String codigo){
         if(codigo == null) return;
         switch (codigo) {
             case "20H": PC = getLimite(); break;
             case "10H": imprimir("P" + bcpActual.getIdProceso() + " > " + (DXTexto != null ? DXTexto : String.valueOf(DX))); break;   // pantalla
-            case "09H": solicitudTeclado = true; break;                                  // teclado
             case "21H": ejecutarINT21(); break;                                          // archivos
             default: throw new RuntimeException("Interrupción inválida: " + codigo);
         }

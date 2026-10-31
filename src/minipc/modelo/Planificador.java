@@ -77,42 +77,23 @@ public class Planificador {
         }
     }
 
+    // Correccion - Poll: se quita el reparto "mitad en RAM, mitad en memoria virtual"; si el
+    // programa no cabe completo en un hueco de RAM, espera en la lista de trabajos
     // E: bcp (BCP) - primer trabajo de la lista de trabajos
     // S: boolean - true si se pudo cargar en memoria (y pasó a la lista de procesos)
-    // R: si no cabe completo en RAM, la parte que sobra va a la memoria virtual
+    // R: el programa debe caber completo en un hueco contiguo de la zona de usuario
     private boolean intentarCargar(BCP bcp){
         int slot = slotLibre();
         if (slot == -1) return false;                        // no hay espacio para su BCP
 
         int tamano = bcp.getTamanioProceso();
-        List<String> lineas = disco.leerArchivo(bcp.getArchivosAbiertos().get(0));
-
         int hueco = memoria.encontrarHueco(tamano);
-        int enRAM = tamano;
-        int baseVirtual = -1;
+        if (hueco == -1) return false;                       // no cabe: espera a que se libere memoria
 
-        if (hueco == -1) {
-            // No cabe completo: se carga en RAM lo que quepa en el hueco más grande
-            // y el resto se manda a la memoria virtual del disco
-            int[] mayor = memoria.huecoMasGrande();
-            if (mayor[0] == -1) return false;                // RAM llena
-            enRAM = Math.min(mayor[1], tamano);
-            baseVirtual = disco.buscarEspacioVirtual(tamano - enRAM);
-            if (baseVirtual == -1) return false;             // memoria virtual llena
-            hueco = mayor[0];
-            disco.escribirVirtual(baseVirtual, lineas.subList(enRAM, tamano));
-            mensajes.add("[SO] P" + bcp.getIdProceso() + " no cabe completo en RAM: "
-                + enRAM + " instrucciones en memoria [" + hueco + "-" + (hueco + enRAM - 1) + "] y "
-                + (tamano - enRAM) + " en memoria virtual (disco [" + baseVirtual + "-"
-                + (baseVirtual + tamano - enRAM - 1) + "])");
-        }
-
-        // Cargar en memoria principal la parte que cabe
-        for (int i = 0; i < enRAM; i++) {
+        List<String> lineas = disco.leerArchivo(bcp.getArchivosAbiertos().get(0));
+        for (int i = 0; i < tamano; i++) {
             memoria.escribir(hueco + i, lineas.get(i));
         }
-        bcp.setEnRAM(enRAM);
-        bcp.setBaseVirtual(baseVirtual);
         bcp.setDireccionBase(hueco);
 
         if (bcp.getDesplazamientoPC() >= 0) {
@@ -151,13 +132,11 @@ public class Planificador {
         return false;
     }
 
-    // Libera la RAM, la memoria virtual y la posición del BCP de un proceso
+    // Correccion - Poll: ya no libera memoria virtual; el programa ocupa solo RAM (base + alcance)
+    // Libera la RAM y la posición del BCP de un proceso
     private void liberarMemoria(BCP bcp){
         if (bcp.getDireccionBase() >= 0) {
-            memoria.liberar(bcp.getDireccionBase(), bcp.getEnRAM());
-        }
-        if (bcp.usaMemoriaVirtual()) {
-            disco.liberarVirtual(bcp.getBaseVirtual(), bcp.getEnVirtual());
+            memoria.liberar(bcp.getDireccionBase(), bcp.getTamanioProceso());
         }
         if (bcp.getDireccionBCP() >= 0) {
             memoria.liberar(bcp.getDireccionBCP(), 1);
@@ -165,8 +144,6 @@ public class Planificador {
             bcp.setDireccionBCP(-1);
         }
         bcp.setDireccionBase(-1);
-        bcp.setEnRAM(0);
-        bcp.setBaseVirtual(-1);
     }
 
     // E: enEjecucion (int) - 1 si hay un proceso en la CPU

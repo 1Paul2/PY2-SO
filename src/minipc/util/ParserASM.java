@@ -29,6 +29,7 @@ public class ParserASM {
     private static final int VALOR_MAX = 127;
     private static final int MAX_PARAMETROS = 3;
 
+    // Correccion - Poll: INT 09H (teclado) ya no es válida; se rechaza con un mensaje propio
     // E: linea (String) - una línea del .asm, sin comentarios y no vacía
     // S: Instruccion - la instrucción validada
     // R: lanza IllegalArgumentException con el motivo si la línea no es válida
@@ -167,12 +168,15 @@ public class ParserASM {
                 return new Instruccion(operacion, valores);
             }
 
-            // ---- INT 20H / 10H / 09H / 21H ----
+            // ---- INT 20H / 10H / 21H ----
             case "INT": {
                 exigirCantidad(operacion, ops, 1, 1);
+                if("09H".equals(ops[0])){
+                    throw new IllegalArgumentException("la interrupción INT 09H (entrada de teclado) ya no se usa en este proyecto");
+                }
                 if(!TipoOperacion.esInterrupcionValida(ops[0])){
                     throw new IllegalArgumentException("la interrupción \"" + ops[0]
-                        + "\" no existe (válidas: 20H, 10H, 09H, 21H)");
+                        + "\" no existe (válidas: 20H, 10H, 21H)");
                 }
                 return new Instruccion(operacion, ops[0]);
             }

@@ -46,7 +46,7 @@ import minipc.util.ParserASM;
 /**
  * VentanaPrincipal: interfaz gráfica del Mini PC. Muestra la cola de trabajos,
  * la CPU y sus registros, el BCP actual, la pila, la memoria principal (mapa
- * y tabla), el disco y la pantalla/teclado. Toda la lógica la delega en
+ * y tabla), el disco y la pantalla. Toda la lógica la delega en
  * GestorProcesos; esta clase solo dibuja y reacciona a los botones.
  */
 public class VentanaPrincipal extends JFrame {
@@ -56,13 +56,10 @@ public class VentanaPrincipal extends JFrame {
 
     // Ejecución automática
     private final Timer timerAuto;
-    // En Siguiente: mientras un proceso espera el teclado (INT 09H), el reloj
-    // avanza solo cada segundo real hasta que se ingrese el valor
-    private final Timer timerEspera;
     private boolean modoAutomatico = false;
 
     // ---- Encabezado y barra de herramientas ----
-    private JLabel lblReloj, lblHora;
+    private JLabel lblReloj;
     private Boton btnCargar, btnEjecutar, btnPaso, btnDetener, btnLimpiar, btnEstadisticas, btnConfigurar, btnSalir;
     private JComboBox<String> cmbVelocidad;
 
@@ -73,7 +70,7 @@ public class VentanaPrincipal extends JFrame {
 
     // ---- Recursos y dispositivos ----
     private BarraUso barraProcesos, barraMemoria, barraBCP, barraDisco, barraVirtual;
-    private Distintivo dispCPU, dispPantalla, dispTeclado, dispDisco;
+    private Distintivo dispCPU, dispPantalla, dispDisco;
 
     // ---- Memoria ----
     private Tarjeta tarjetaMemoria;
@@ -82,13 +79,11 @@ public class VentanaPrincipal extends JFrame {
     private JTable tablaMemoria;
     private String[] duenoPosicion = new String[0];   // "S.O.", "P1"  por posición
     private int posicionPC = -1;
-    private int posicionPCVirtual = -1;   // posición del disco del PC si ejecuta desde memoria virtual
 
     // ---- CPU ----
     private JLabel lblProcesoActual, lblInstruccion;
     private Distintivo distEstadoCPU;
     private final JLabel[] valoresRegistro = new JLabel[10];  // PC, IR, AC, AX, BX, CX, DX, FLAG, AH, AL
-    private JProgressBar barraInstruccion;
 
     // ---- Pila ----
     private PanelPila panelPila;
@@ -102,21 +97,17 @@ public class VentanaPrincipal extends JFrame {
     private DefaultTableModel modeloDisco;
     private JTable tablaDisco;
 
-    // ---- Pantalla y teclado ----
+    // ---- Pantalla ----
     private JTextPane areaPantalla;
-    private JTextField txtTeclado;
-    private Boton btnEnviar;
-    private JLabel lblTeclado;
 
+    // Correccion - Poll: se quita el timer que contaba los segundos de espera del teclado, y el
+    // shutdown hook que devolvía config.txt a los valores por defecto al cerrar
     // E: no aplica
     // S: no aplica constructor
     // R: arma la ventana completa con la configuración de config.txt
     public VentanaPrincipal(){
         super("Mini PC · Gestor de Procesos");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        // Al cerrar el programa (botón Salir, la X de la ventana o Stop de NetBeans)
-        // la configuración vuelve a los valores predeterminados en config.txt
-        Runtime.getRuntime().addShutdownHook(new Thread(configuracion::restaurarPredeterminados));
         getContentPane().setBackground(Tema.FONDO);
         setLayout(new BorderLayout(0, 12));
         ((JComponent) getContentPane()).setBorder(new EmptyBorder(14, 16, 14, 16));
@@ -125,7 +116,6 @@ public class VentanaPrincipal extends JFrame {
         add(crearCuerpo(), BorderLayout.CENTER);
 
         timerAuto = new Timer(400, e -> pasoAutomatico());
-        timerEspera = new Timer(1000, e -> segundoDeEspera());
 
         setMinimumSize(new Dimension(1280, 780));
         setSize(new Dimension(1500, 900));
@@ -138,6 +128,7 @@ public class VentanaPrincipal extends JFrame {
     //ENCABEZADO
 
 
+    // Correccion - Poll: se quita el chip de hora real; el tiempo se muestra solo en segundos desde 0
     private JPanel crearEncabezado(){
         JPanel panel = new JPanel(new BorderLayout(0, 12));
         panel.setOpaque(false);
@@ -176,9 +167,7 @@ public class VentanaPrincipal extends JFrame {
         JPanel reloj = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         reloj.setOpaque(false);
         lblReloj = chip("Tiempo  0 s", Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
-        lblHora = chip("--:--:--", Tema.AZUL, Tema.AZUL_CLARO);
         reloj.add(lblReloj);
-        reloj.add(lblHora);
         fila1.add(reloj, BorderLayout.EAST);
         panel.add(fila1, BorderLayout.NORTH);
 
@@ -286,6 +275,7 @@ public class VentanaPrincipal extends JFrame {
 
     // ------------------------- Columna izquierda -------------------------
 
+    // Correccion - Poll: se quita el dispositivo "Teclado (entrada)" (INT 09H ya no se usa)
     private JPanel crearColumnaIzquierda(){
         // Cola de trabajos (lista de trabajos + lista de procesos)
         tarjetaCola = new Tarjeta("Cola de trabajos", Tema.VERDE);
@@ -322,15 +312,13 @@ public class VentanaPrincipal extends JFrame {
 
         // Dispositivos
         Tarjeta dispositivos = new Tarjeta("Dispositivos", Tema.MORADO);
-        JPanel filas = new JPanel(new GridLayout(4, 1, 0, 6));
+        JPanel filas = new JPanel(new GridLayout(3, 1, 0, 6));
         filas.setOpaque(false);
         dispCPU = new Distintivo();
         dispPantalla = new Distintivo();
-        dispTeclado = new Distintivo();
         dispDisco = new Distintivo();
         filas.add(filaDispositivo("CPU 1", dispCPU));
         filas.add(filaDispositivo("Pantalla", dispPantalla));
-        filas.add(filaDispositivo("Teclado (entrada)", dispTeclado));
         filas.add(filaDispositivo("Disco", dispDisco));
         dispositivos.getContenido().add(filas, BorderLayout.NORTH);
 
@@ -363,6 +351,8 @@ public class VentanaPrincipal extends JFrame {
 
     // -------------------------- Columna central --------------------------
 
+    // Correccion - Poll: se quita la línea de entrada del teclado (etiqueta, campo y botón Enviar)
+    // debajo de la pantalla, y la leyenda "(+N virtual)" de la memoria virtual partida
     private JPanel crearColumnaCentral(){
         // Memoria principal: mapa visual + tabla
         tarjetaMemoria = new Tarjeta("Memoria principal", Tema.VERDE);
@@ -389,7 +379,6 @@ public class VentanaPrincipal extends JFrame {
         leyenda.add(itemLeyenda("S.O. / BCP", Tema.NARANJA_SO));
         leyenda.add(itemLeyenda("Libre", new Color(0xCBD5D0)));
         leyenda.add(itemLeyenda("PC", Tema.ROJO));
-        leyenda.add(itemLeyenda("(+N virtual) = parte en disco", Tema.MORADO));
         mapaConLeyenda.add(leyenda, BorderLayout.SOUTH);
 
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, mapaConLeyenda, Componentes.scroll(tablaMemoria));
@@ -399,7 +388,7 @@ public class VentanaPrincipal extends JFrame {
         split.setDividerSize(8);
         tarjetaMemoria.getContenido().add(split, BorderLayout.CENTER);
 
-        // Pantalla + teclado
+        // Pantalla
         Tarjeta pantalla = new Tarjeta("Pantalla", new Color(0x0F766E));
         areaPantalla = new JTextPane();
         areaPantalla.setEditable(false);
@@ -407,24 +396,6 @@ public class VentanaPrincipal extends JFrame {
         areaPantalla.setBackground(new Color(0xFBFDFB));
         areaPantalla.setBorder(new EmptyBorder(8, 10, 8, 10));
         pantalla.getContenido().add(Componentes.scroll(areaPantalla), BorderLayout.CENTER);
-
-        JPanel entrada = new JPanel(new BorderLayout(8, 0));
-        entrada.setOpaque(false);
-        entrada.setBorder(new EmptyBorder(8, 0, 0, 0));
-        lblTeclado = new JLabel(">> Ingresar valor:");
-        lblTeclado.setFont(Tema.NEGRITA);
-        lblTeclado.setForeground(Tema.TEXTO_SUAVE);
-        txtTeclado = new JTextField();
-        txtTeclado.setFont(Tema.MONO_NORMAL);
-        txtTeclado.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(Tema.BORDE), new EmptyBorder(6, 8, 6, 8)));
-        btnEnviar = new Boton("Enviar", Tema.AMBAR);
-        entrada.add(lblTeclado, BorderLayout.WEST);
-        entrada.add(txtTeclado, BorderLayout.CENTER);
-        entrada.add(btnEnviar, BorderLayout.EAST);
-        pantalla.getContenido().add(entrada, BorderLayout.SOUTH);
-        txtTeclado.addActionListener(e -> enviarTeclado());
-        btnEnviar.addActionListener(e -> enviarTeclado());
 
         // Disco
         tarjetaDisco = new Tarjeta("Disco", Tema.MORADO);
@@ -459,6 +430,7 @@ public class VentanaPrincipal extends JFrame {
 
     // -------------------------- Columna derecha --------------------------
 
+    // Correccion - Poll: se quita la barra de progreso de la instrucción según su peso
     private JPanel crearColumnaDerecha(){
         // CPU
         Tarjeta cpu = new Tarjeta("CPU 1", Tema.VERDE);
@@ -492,13 +464,7 @@ public class VentanaPrincipal extends JFrame {
         lblInstruccion = new JLabel("Instrucción en curso: -");
         lblInstruccion.setFont(Tema.PEQUENA);
         lblInstruccion.setForeground(Tema.TEXTO_SUAVE);
-        barraInstruccion = new JProgressBar(0, 1);
-        barraInstruccion.setForeground(Tema.VERDE);
-        barraInstruccion.setBackground(Tema.VERDE_CLARO);
-        barraInstruccion.setBorderPainted(false);
-        barraInstruccion.setPreferredSize(new Dimension(10, 8));
         instr.add(lblInstruccion, BorderLayout.NORTH);
-        instr.add(barraInstruccion, BorderLayout.CENTER);
         contCPU.add(instr, BorderLayout.SOUTH);
         cpu.getContenido().add(contCPU, BorderLayout.CENTER);
 
@@ -620,58 +586,36 @@ public class VentanaPrincipal extends JFrame {
         }
     }
 
+    // Correccion - Poll: ya no se bloquea ni arranca el conteo de espera del teclado
     // Botón "Siguiente": 1 segundo de CPU
     private void pasoManual(){
         if (!validarHayProcesos()) return;
-        if (gestor.bloqueadoPorTeclado()) {
-            // Todos los procesos esperan el teclado: el tiempo ya corre solo; no se suman segundos extra con clics
-            avisar("Todos los procesos están esperando un valor de teclado.\nIngreselo en la Pantalla y presione Enter.");
-            return;
-        }
         gestor.ejecutarUnPaso();
         actualizarVista();
-        if (gestor.bloqueadoPorTeclado()) {
-            iniciarEsperaTeclado();
-        } else if (!gestor.hayProcesos()) {
+        if (!gestor.hayProcesos()) {
             finEjecucion();
         }
     }
 
-    // Arranca el conteo automático de segundos mientras se espera el teclado (modo Siguiente)
-    private void iniciarEsperaTeclado(){
-        if (!modoAutomatico && !timerEspera.isRunning()) timerEspera.start();
-    }
-
-    // Cada segundo real con la CPU ociosa esperando el teclado: suma 1 s al reloj
-    private void segundoDeEspera(){
-        if (gestor == null || !gestor.bloqueadoPorTeclado() || modoAutomatico) {
-            timerEspera.stop();
-            return;
-        }
-        gestor.ejecutarUnPaso();
-        actualizarVista();
-    }
-
+    // Correccion - Poll: se quita el aviso de "un proceso espera un valor de teclado"
     // Botón "Ejecutar": modo automático
     private void iniciarAutomatico(){
         if (!validarHayProcesos()) return;
         if (cmbVelocidad.getSelectedIndex() == 1) {          // instantánea
             gestor.ejecutarTodo();
             actualizarVista();
-            if (gestor.bloqueadoPorTeclado()) {
-                avisar("La ejecución se detuvo: un proceso espera un valor de teclado.");
-            } else if (!gestor.hayProcesos()) {
+            if (!gestor.hayProcesos()) {
                 finEjecucion();
             }
             return;
         }
         modoAutomatico = true;
-        timerEspera.stop();                 // en automático el timer principal cuenta la espera
         timerAuto.setDelay(retardoSeleccionado());
         timerAuto.start();
         actualizarBotones();
     }
 
+    // Correccion - Poll: el timer ya no se detiene esperando el teclado
     private void pasoAutomatico(){
         if (gestor == null || !gestor.hayProcesos()) {
             detenerAutomatico(false);
@@ -679,9 +623,7 @@ public class VentanaPrincipal extends JFrame {
             if (gestor != null) finEjecucion();
             return;
         }
-        if (!gestor.ejecutarUnPaso() && gestor.bloqueadoPorTeclado()) {
-            timerAuto.stop();       // se reanuda solo al ingresar el valor
-        }
+        gestor.ejecutarUnPaso();
         actualizarVista();
     }
 
@@ -706,22 +648,6 @@ public class VentanaPrincipal extends JFrame {
         if (r == JOptionPane.YES_OPTION) mostrarEstadisticas();
     }
 
-    private void enviarTeclado(){
-        if (gestor == null || !gestor.esperandoTeclado()) return;
-        String texto = txtTeclado.getText().trim();
-        try {
-            gestor.ingresarTeclado(Integer.parseInt(texto));
-            if (!gestor.bloqueadoPorTeclado()) timerEspera.stop();   // ya hay algo que ejecutar: el reloj deja de correr solo
-            txtTeclado.setText("");
-            if (modoAutomatico && !timerAuto.isRunning()) timerAuto.start();
-        } catch (NumberFormatException e) {
-            avisar("Ingresá un número entero entre 0 y 255.");
-        } catch (RuntimeException e) {
-            avisar(e.getMessage());
-        }
-        actualizarVista();
-    }
-
     // E: no aplica
     // S: no aplica (void)
     // R: pide confirmación si hay procesos sin terminar y cierra la aplicación
@@ -738,6 +664,7 @@ public class VentanaPrincipal extends JFrame {
         }
     }
 
+    // Correccion - Poll: ya no detiene el timer de espera ni limpia el campo del teclado
     // E: no aplica
     // S: no aplica (void)
     // R: siempre pide confirmación antes de borrar procesos, memoria, disco, pantalla y estadísticas
@@ -754,9 +681,7 @@ public class VentanaPrincipal extends JFrame {
             "Confirmar limpieza", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (r != JOptionPane.YES_OPTION) return;
         detenerAutomatico(false);
-        timerEspera.stop();
         gestor = null;
-        txtTeclado.setText("");
         actualizarVista();
     }
 
@@ -795,14 +720,13 @@ public class VentanaPrincipal extends JFrame {
         actualizarBotones();
     }
 
+    // Correccion - Poll: se quita la hora real (HH:mm:ss); queda solo el tiempo en segundos desde 0
     private void actualizarEncabezado(){
         if (gestor == null) {
             ((Distintivo) lblReloj).setColores("Tiempo  0 s", Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
-            ((Distintivo) lblHora).setColores("--:--:--", Tema.AZUL, Tema.AZUL_CLARO);
             return;
         }
         ((Distintivo) lblReloj).setColores("Tiempo  " + gestor.getReloj() + " s", Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
-        ((Distintivo) lblHora).setColores("Hora  " + gestor.getHoraSimulada(), Tema.AZUL, Tema.AZUL_CLARO);
     }
 
     private void actualizarCola(){
@@ -824,6 +748,8 @@ public class VentanaPrincipal extends JFrame {
         tarjetaCola.setExtra(gestor.getTodosLosProcesos().size() + " procesos · " + trabajos + " esperando memoria");
     }
 
+    // Correccion - Poll: se quita el estado del dispositivo teclado, y la memoria usada se cuenta
+    // con el alcance completo del proceso (ya no hay parte en memoria virtual)
     private void actualizarRecursos(){
         if (gestor == null) {
             int usuario = configuracion.getMemoriaPrincipal() - configuracion.getMemoriaSistema();
@@ -834,7 +760,6 @@ public class VentanaPrincipal extends JFrame {
             barraVirtual.setValor(0, configuracion.getMemoriaVirtual());
             dispCPU.setColores("Libre", Tema.GRIS, Tema.GRIS_CLARO);
             dispPantalla.setColores("Lista", Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
-            dispTeclado.setColores("Libre", Tema.GRIS, Tema.GRIS_CLARO);
             dispDisco.setColores("Sin archivos", Tema.GRIS, Tema.GRIS_CLARO);
             return;
         }
@@ -845,7 +770,7 @@ public class VentanaPrincipal extends JFrame {
         for (BCP b : gestor.getTodosLosProcesos()) {
             String e = b.getEstado();
             if (!"Nuevo".equals(e) && !"Finalizado".equals(e)) {
-                usuarioUsado += b.getEnRAM();
+                usuarioUsado += b.getTamanioProceso();
                 if (b.getDireccionBCP() >= 0) bcps++;
             }
         }
@@ -870,13 +795,11 @@ public class VentanaPrincipal extends JFrame {
         dispPantalla.setColores(gestor.getCpu().getPantalla().isEmpty() ? "Lista" : "Mostrando salida",
             Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
 
-        BCP esperando = gestor.getProcesoEsperandoTeclado();
-        if (esperando != null) dispTeclado.setColores("Esperando P" + esperando.getIdProceso(), Tema.AMBAR, Tema.AMBAR_CLARO);
-        else dispTeclado.setColores("Libre", Tema.GRIS, Tema.GRIS_CLARO);
-
         dispDisco.setColores(archivos + " archivo(s)", Tema.MORADO, Tema.MORADO_CLARO);
     }
 
+    // Correccion - Poll: ya no muestra "N de M s" según el peso; cada instrucción dura 1 s.
+    // Tampoco muestra "desde memoria virtual" (memoria virtual partida)
     private void actualizarCPU(){
         CPU cpu = gestor == null ? null : gestor.getCpu();
         BCP actual = cpu == null ? null : cpu.getBcpActual();
@@ -897,8 +820,6 @@ public class VentanaPrincipal extends JFrame {
             valoresRegistro[7].setText("-");
             valoresRegistro[6].setFont(Tema.MONO_GRANDE);
             lblInstruccion.setText("Instrucción en curso: -");
-            barraInstruccion.setMaximum(1);
-            barraInstruccion.setValue(0);
             return;
         }
         valoresRegistro[0].setText(String.valueOf(cpu.getPC()));
@@ -918,23 +839,15 @@ public class VentanaPrincipal extends JFrame {
         valoresRegistro[8].setText(String.format("%d (%02XH)", cpu.getAH(), cpu.getAH()));
         valoresRegistro[9].setText(String.valueOf(cpu.getAL()));
 
-        int restantes = cpu.getSegundosRestantes();
-        if (actual != null && restantes > 0) {
-            String[] partes = cpu.getIR().trim().split("[,\\s]+");
-            int peso = minipc.hardware.Pesos.de(partes[0], partes.length > 1 ? partes[1] : null);
-            boolean desdeVirtual = actual.usaMemoriaVirtual()
-                && cpu.getPC() - 1 - actual.getDireccionBase() >= actual.getEnRAM();
-            lblInstruccion.setText("Ejecutando " + cpu.getIR() + "  ·  " + (peso - restantes) + " de " + peso + " s"
-                + (desdeVirtual ? "  ·  desde memoria virtual" : ""));
-            barraInstruccion.setMaximum(peso);
-            barraInstruccion.setValue(peso - restantes);
+        if (actual != null && cpu.getIR() != null && !cpu.getIR().isEmpty()) {
+            lblInstruccion.setText("Última instrucción: " + cpu.getIR() + "  ·  1 s");
         } else {
-            lblInstruccion.setText(actual == null ? "Instrucción en curso: -" : "Lista para la siguiente instrucción");
-            barraInstruccion.setMaximum(1);
-            barraInstruccion.setValue(actual == null ? 0 : 1);
+            lblInstruccion.setText(actual == null ? "Instrucción en curso: -" : "Lista para la primera instrucción");
         }
     }
 
+    // Correccion - Poll: el tiempo de inicio se muestra en segundos desde 0, no en hora real,
+    // y el alcance ya no se divide en "RAM + virtual"
     private void actualizarBCP(){
         BCP b = (gestor == null) ? null : gestor.getCpu().getBcpActual();
         panelPila.setBCP(b);
@@ -946,17 +859,17 @@ public class VentanaPrincipal extends JFrame {
         valoresBCP[0].setText("P" + b.getIdProceso());
         distEstadoBCP.setEstado(b.getEstado());
         valoresBCP[2].setText(String.valueOf(b.getDireccionBase()));
-        valoresBCP[3].setText(b.usaMemoriaVirtual()
-            ? b.getTamanioProceso() + " (" + b.getEnRAM() + " RAM + " + b.getEnVirtual() + " virtual)"
-            : b.getTamanioProceso() + " posiciones");
+        valoresBCP[3].setText(b.getTamanioProceso() + " posiciones");
         valoresBCP[4].setText(String.valueOf(b.getPrioridad()));
         valoresBCP[5].setText("CPU " + b.getCpuId());
-        valoresBCP[6].setText(b.getTiempoInicio() >= 0 ? gestor.horaDe(b.getTiempoInicio()) : "-");
+        valoresBCP[6].setText(b.getTiempoInicio() >= 0 ? "t = " + b.getTiempoInicio() + " s" : "-");
         valoresBCP[7].setText(b.getTiempoEmpleado() + " s");
         valoresBCP[8].setText(b.getDireccionBCP() >= 0 ? "Memoria[" + b.getDireccionBCP() + "]" : "-");
         valoresBCP[9].setText(String.join(", ", b.getArchivosAbiertos()));
     }
 
+    // Correccion - Poll: el dueño de cada posición usa el alcance completo y el PC siempre está
+    // en RAM (ya no hay parte del programa en memoria virtual)
     private void actualizarMemoria(){
         mapaMemoria.setGestor(gestor);
         int total = gestor == null ? configuracion.getMemoriaPrincipal() : gestor.getMemoria().getTamanoTotal();
@@ -973,7 +886,7 @@ public class VentanaPrincipal extends JFrame {
         for (BCP b : gestor.getTodosLosProcesos()) {
             String e = b.getEstado();
             if ("Nuevo".equals(e) || "Finalizado".equals(e) || b.getDireccionBase() < 0) continue;
-            for (int i = b.getDireccionBase(); i < b.getDireccionBase() + b.getEnRAM() && i < total; i++) {
+            for (int i = b.getDireccionBase(); i < b.getDireccionBase() + b.getTamanioProceso() && i < total; i++) {
                 duenoPosicion[i] = "P" + b.getIdProceso();
             }
             if (b.getDireccionBCP() >= 0) duenoPosicion[b.getDireccionBCP()] = "BCP P" + b.getIdProceso();
@@ -987,7 +900,7 @@ public class VentanaPrincipal extends JFrame {
         }
 
         BCP actual = gestor.getCpu().getBcpActual();
-        int nuevoPC = (actual == null || gestor.getCpu().posicionVirtualPC() >= 0) ? -1 : gestor.getCpu().getPC();
+        int nuevoPC = actual == null ? -1 : gestor.getCpu().getPC();
         if (nuevoPC != posicionPC && nuevoPC >= 0 && nuevoPC < total) {
             tablaMemoria.scrollRectToVisible(tablaMemoria.getCellRect(Math.min(total - 1, nuevoPC + 3), 0, true));
             tablaMemoria.scrollRectToVisible(tablaMemoria.getCellRect(nuevoPC, 0, true));
@@ -996,6 +909,8 @@ public class VentanaPrincipal extends JFrame {
         tablaMemoria.repaint();
     }
 
+    // Correccion - Poll: la zona virtual del disco ya no marca partes de procesos ni sigue al PC
+    // (memoria virtual partida); queda reservada para la paginación
     private void actualizarDisco(){
         if (gestor == null) {
             modeloDisco.setRowCount(0);
@@ -1007,33 +922,19 @@ public class VentanaPrincipal extends JFrame {
         tarjetaDisco.setExtra(total + " · " + d.virtualUsada() + "/" + d.getTamanoMemoriaVirtual() + " virtual");
         if (modeloDisco.getRowCount() != total) modeloDisco.setRowCount(total);
         int inicioVirtual = total - d.getTamanoMemoriaVirtual();
-        String[] duenoVirtual = new String[total];
-        for (BCP b : gestor.getTodosLosProcesos()) {
-            if (!b.usaMemoriaVirtual() || "Finalizado".equals(b.getEstado())) continue;
-            for (int i = b.getBaseVirtual(); i < b.getBaseVirtual() + b.getEnVirtual() && i < total; i++) {
-                duenoVirtual[i] = "Virtual P" + b.getIdProceso();
-            }
-        }
-        int nuevoPCVirtual = gestor.getCpu().posicionVirtualPC();
         for (int i = 0; i < total; i++) {
-            String zona = i < d.getTamanoIndice() ? "Índice"
-                : (i >= inicioVirtual ? (duenoVirtual[i] != null ? duenoVirtual[i] : "Virtual") : "Archivos");
+            String zona = i < d.getTamanoIndice() ? "Índice" : (i >= inicioVirtual ? "Virtual" : "Archivos");
             modeloDisco.setValueAt(i, i, 0);
             modeloDisco.setValueAt(d.leer(i), i, 1);
             modeloDisco.setValueAt(zona, i, 2);
         }
-        if (nuevoPCVirtual >= 0 && nuevoPCVirtual != posicionPCVirtual) {
-            tablaDisco.scrollRectToVisible(tablaDisco.getCellRect(Math.min(total - 1, nuevoPCVirtual + 3), 0, true));
-            tablaDisco.scrollRectToVisible(tablaDisco.getCellRect(nuevoPCVirtual, 0, true));
-        }
-        posicionPCVirtual = nuevoPCVirtual;
         tablaDisco.repaint();
     }
 
+    // Correccion - Poll: se quita la habilitación del campo de teclado según el proceso en espera
     private void actualizarPantalla(){
         StyledDocument doc = areaPantalla.getStyledDocument();
         areaPantalla.setText("");
-        boolean esperando = gestor != null && gestor.esperandoTeclado();
 
         if (gestor != null) {
             for (String linea : gestor.getCpu().getPantalla()) {
@@ -1053,7 +954,7 @@ public class VentanaPrincipal extends JFrame {
                     StyleConstants.setForeground(a, Tema.VERDE_OSCURO);
                     StyleConstants.setBold(a, true);
                 } else {
-                    StyleConstants.setForeground(a, Tema.AZUL);   // valores ingresados por teclado
+                    StyleConstants.setForeground(a, Tema.AZUL);
                 }
                 try {
                     doc.insertString(doc.getLength(), linea + "\n", a);
@@ -1061,20 +962,6 @@ public class VentanaPrincipal extends JFrame {
             }
         }
         areaPantalla.setCaretPosition(doc.getLength());
-
-        txtTeclado.setEnabled(esperando);
-        btnEnviar.setEnabled(esperando);
-        if (esperando) {
-            BCP b = gestor.getProcesoEsperandoTeclado();
-            lblTeclado.setText(">> P" + b.getIdProceso() + " valor (0-255):");
-            lblTeclado.setForeground(Tema.AMBAR);
-            txtTeclado.setBackground(Tema.AMBAR_CLARO);
-            txtTeclado.requestFocusInWindow();
-        } else {
-            lblTeclado.setText(">> Ingresar valor:");
-            lblTeclado.setForeground(Tema.TEXTO_SUAVE);
-            txtTeclado.setBackground(Color.WHITE);
-        }
     }
 
     private void actualizarBotones(){
@@ -1154,6 +1041,8 @@ public class VentanaPrincipal extends JFrame {
         return t;
     }
 
+    // Correccion - Poll: la zona del S.O. y la memoria virtual se pueden editar; ya no se
+    // calculan con porcentajes fijos (25 % y 12,5 %)
     private void mostrarConfiguracion(){
         JDialog dlg = new JDialog(this, "Configuración del Mini PC", true);
         Tarjeta t = new Tarjeta("Tamaños (se guardan en " + ConfiguracionSistema.ARCHIVO_POR_DEFECTO + ")", Tema.VERDE);
@@ -1163,29 +1052,10 @@ public class VentanaPrincipal extends JFrame {
         JTextField ms = campo(configuracion.getMemoriaSistema());
         JTextField as = campo(configuracion.getAlmacenamientoSecundario());
         JTextField mv = campo(configuracion.getMemoriaVirtual());
-        // La zona del S.O. y la memoria virtual se calculan solas (no se editan)
-        for (JTextField calc : new JTextField[]{ms, mv}) {
-            calc.setEditable(false);
-            calc.setBackground(Tema.GRIS_CLARO);
-            calc.setForeground(Tema.TEXTO_SUAVE);
-        }
-        Runnable recalcular = () -> {
-            try { ms.setText(String.valueOf(ConfiguracionSistema.calcularZonaSO(Integer.parseInt(mp.getText().trim())))); }
-            catch (NumberFormatException ex) { ms.setText("-"); }
-            try { mv.setText(String.valueOf(ConfiguracionSistema.calcularMemoriaVirtual(Integer.parseInt(as.getText().trim())))); }
-            catch (NumberFormatException ex) { mv.setText("-"); }
-        };
-        javax.swing.event.DocumentListener alCambiar = new javax.swing.event.DocumentListener() {
-            @Override public void insertUpdate(javax.swing.event.DocumentEvent e){ recalcular.run(); }
-            @Override public void removeUpdate(javax.swing.event.DocumentEvent e){ recalcular.run(); }
-            @Override public void changedUpdate(javax.swing.event.DocumentEvent e){ recalcular.run(); }
-        };
-        mp.getDocument().addDocumentListener(alCambiar);
-        as.getDocument().addDocumentListener(alCambiar);
         campos.add(etiqueta("Memoria principal"));               campos.add(mp);
-        campos.add(etiqueta("Zona del S.O. (25 %)"));            campos.add(ms);
+        campos.add(etiqueta("Zona del S.O."));                   campos.add(ms);
         campos.add(etiqueta("Almacenamiento secundario"));       campos.add(as);
-        campos.add(etiqueta("Memoria virtual (12,5 % disco)"));  campos.add(mv);
+        campos.add(etiqueta("Memoria virtual (en disco)"));      campos.add(mv);
         t.getContenido().add(campos, BorderLayout.CENTER);
 
         Boton cargar = new Boton("Cargar archivo...", Tema.GRIS);
@@ -1210,10 +1080,11 @@ public class VentanaPrincipal extends JFrame {
         aplicar.addActionListener(e -> {
             try {
                 configuracion.setTamanos(
-                    Integer.parseInt(mp.getText().trim()), Integer.parseInt(as.getText().trim()));
+                    Integer.parseInt(mp.getText().trim()), Integer.parseInt(ms.getText().trim()),
+                    Integer.parseInt(as.getText().trim()), Integer.parseInt(mv.getText().trim()));
                 configuracion.guardarEnArchivo(new File(ConfiguracionSistema.ARCHIVO_POR_DEFECTO));
             } catch (NumberFormatException ex) {
-                JOptionPane.showMessageDialog(dlg, "La memoria principal y el disco deben ser números enteros.", "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(dlg, "Los cuatro tamaños deben ser números enteros.", "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(dlg, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
@@ -1312,6 +1183,8 @@ public class VentanaPrincipal extends JFrame {
 
     /** Tabla de disco: índice en verde, memoria virtual en morado. */
     private class RenderDisco extends DefaultTableCellRenderer {
+        // Correccion - Poll: se quitan el color por proceso en la zona virtual y la marca del PC
+        // (memoria virtual partida)
         @Override
         public Component getTableCellRendererComponent(JTable t, Object v, boolean s, boolean f, int r, int c){
             JLabel l = (JLabel) super.getTableCellRendererComponent(t, v, s, f, r, c);
@@ -1319,20 +1192,12 @@ public class VentanaPrincipal extends JFrame {
             String valor = String.valueOf(t.getModel().getValueAt(r, 1));
             Color fondo = Color.WHITE;
             if ("Índice".equals(zona)) fondo = valor.isEmpty() ? Tema.aclarar(Tema.VERDE, 0.92f) : Tema.VERDE_CLARO;
-            else if (zona.startsWith("Virtual P")) {
-                int id = Integer.parseInt(zona.substring("Virtual P".length()));
-                fondo = Tema.aclarar(Tema.colorProceso(id), 0.7f);    // parte del proceso en memoria virtual
-            }
             else if ("Virtual".equals(zona)) fondo = Tema.aclarar(Tema.MORADO, 0.92f);
             else if (!valor.isEmpty()) fondo = Tema.aclarar(Tema.MORADO, 0.8f);
-            boolean esPC = r == posicionPCVirtual;
-            Color texto = c == 2 ? Tema.TEXTO_SUAVE : Tema.TEXTO;
-            if (esPC) { fondo = Tema.ROJO_CLARO; texto = Tema.ROJO; }
             l.setBackground(s ? Tema.VERDE_CLARO : fondo);
-            l.setForeground(texto);
-            l.setFont(c == 1 ? Tema.MONO_NORMAL : (esPC ? Tema.PEQUENA_B : Tema.PEQUENA));
+            l.setForeground(c == 2 ? Tema.TEXTO_SUAVE : Tema.TEXTO);
+            l.setFont(c == 1 ? Tema.MONO_NORMAL : Tema.PEQUENA);
             l.setBorder(new EmptyBorder(0, 8, 0, 8));
-            if (c == 0 && esPC) l.setText("▶ " + v);
             return l;
         }
     }
@@ -1827,6 +1692,8 @@ public class VentanaPrincipal extends JFrame {
             return lista;
         }
 
+        // Correccion - Poll: cada bloque se dibuja con el alcance completo; se quitan la etiqueta
+        // "(+N virtual)" y el aviso "PC en memoria virtual" (memoria virtual partida)
         @Override
         protected void paintComponent(Graphics g){
             Graphics2D g2 = (Graphics2D) g.create();
@@ -1884,7 +1751,7 @@ public class VentanaPrincipal extends JFrame {
             int yPCBloque = -1, altoPCBloque = 0;
             for (BCP b : bloques) {
                 int y = Math.max(arriba + (int) Math.round(b.getDireccionBase() * escala), finAnterior);
-                int alto = Math.max(18, (int) Math.round(b.getEnRAM() * escala));
+                int alto = Math.max(18, (int) Math.round(b.getTamanioProceso() * escala));
                 Color c = Tema.colorProceso(b.getIdProceso());
                 g2.setColor(c);
                 g2.fillRoundRect(x, y, w, alto, 10, 10);
@@ -1899,8 +1766,7 @@ public class VentanaPrincipal extends JFrame {
                 g2.setColor(Color.WHITE);
                 g2.setFont(Tema.PEQUENA_B);
                 String texto = "P" + b.getIdProceso() + "  Base " + b.getDireccionBase()
-                    + " · Alcance " + b.getTamanioProceso()
-                    + (b.usaMemoriaVirtual() ? " (+" + b.getEnVirtual() + " virtual)" : "");
+                    + " · Alcance " + b.getTamanioProceso();
                 if (g2.getFontMetrics().stringWidth(texto) > w - 8) texto = "P" + b.getIdProceso();
                 dibujarCentrado(g2, texto, x, y, w, alto);
                 if (y - ultimaEtiqueta >= 13) {
@@ -1911,27 +1777,13 @@ public class VentanaPrincipal extends JFrame {
             }
 
             // Flecha del PC
-            if (enCpu != null && yPCBloque >= 0 && gestor.getCpu().posicionVirtualPC() < 0) {
+            if (enCpu != null && yPCBloque >= 0) {
                 int pc = gestor.getCpu().getPC();
-                double rel = (pc - enCpu.getDireccionBase() + 0.5) / Math.max(1, enCpu.getEnRAM());
+                double rel = (pc - enCpu.getDireccionBase() + 0.5) / Math.max(1, enCpu.getTamanioProceso());
                 int yPC = yPCBloque + (int) Math.round(Math.max(0, Math.min(1, rel)) * altoPCBloque);
                 int xf = x + w + 2;
                 g2.setColor(Tema.ROJO);
                 g2.fillPolygon(new int[]{xf, xf + 10, xf + 10}, new int[]{yPC, yPC - 6, yPC + 6}, 3);
-            }
-
-            // Aviso cuando el PC está en la parte del programa que vive en memoria virtual
-            int pcVirtual = gestor.getCpu().posicionVirtualPC();
-            if (pcVirtual >= 0) {
-                String aviso = "PC en memoria virtual · disco [" + pcVirtual + "]";
-                g2.setFont(Tema.PEQUENA_B);
-                FontMetrics fm = g2.getFontMetrics();
-                int aw = fm.stringWidth(aviso) + 16, ah = fm.getHeight() + 6;
-                int ax = x + (w - aw) / 2, ay = arriba + h - ah - 6;
-                g2.setColor(Tema.ROJO_CLARO);
-                g2.fillRoundRect(ax, ay, aw, ah, ah, ah);
-                g2.setColor(Tema.ROJO);
-                g2.drawString(aviso, ax + 8, ay + (ah + fm.getAscent()) / 2 - 2);
             }
 
             etiquetaDireccion(g2, total - 1, arriba + h - 10);
