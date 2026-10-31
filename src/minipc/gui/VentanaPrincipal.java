@@ -100,16 +100,14 @@ public class VentanaPrincipal extends JFrame {
     // ---- Pantalla ----
     private JTextPane areaPantalla;
 
-    // Correccion - Poll: se quita el timer que contaba los segundos de espera del teclado
+    // Correccion - Poll: se quita el timer que contaba los segundos de espera del teclado, y el
+    // shutdown hook que devolvía config.txt a los valores por defecto al cerrar
     // E: no aplica
     // S: no aplica constructor
     // R: arma la ventana completa con la configuración de config.txt
     public VentanaPrincipal(){
         super("Mini PC · Gestor de Procesos");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        // Al cerrar el programa (botón Salir, la X de la ventana o Stop de NetBeans)
-        // la configuración vuelve a los valores predeterminados en config.txt
-        Runtime.getRuntime().addShutdownHook(new Thread(configuracion::restaurarPredeterminados));
         getContentPane().setBackground(Tema.FONDO);
         setLayout(new BorderLayout(0, 12));
         ((JComponent) getContentPane()).setBorder(new EmptyBorder(14, 16, 14, 16));
@@ -1043,6 +1041,8 @@ public class VentanaPrincipal extends JFrame {
         return t;
     }
 
+    // Correccion - Poll: la zona del S.O. y la memoria virtual se pueden editar; ya no se
+    // calculan con porcentajes fijos (25 % y 12,5 %)
     private void mostrarConfiguracion(){
         JDialog dlg = new JDialog(this, "Configuración del Mini PC", true);
         Tarjeta t = new Tarjeta("Tamaños (se guardan en " + ConfiguracionSistema.ARCHIVO_POR_DEFECTO + ")", Tema.VERDE);
@@ -1052,29 +1052,10 @@ public class VentanaPrincipal extends JFrame {
         JTextField ms = campo(configuracion.getMemoriaSistema());
         JTextField as = campo(configuracion.getAlmacenamientoSecundario());
         JTextField mv = campo(configuracion.getMemoriaVirtual());
-        // La zona del S.O. y la memoria virtual se calculan solas (no se editan)
-        for (JTextField calc : new JTextField[]{ms, mv}) {
-            calc.setEditable(false);
-            calc.setBackground(Tema.GRIS_CLARO);
-            calc.setForeground(Tema.TEXTO_SUAVE);
-        }
-        Runnable recalcular = () -> {
-            try { ms.setText(String.valueOf(ConfiguracionSistema.calcularZonaSO(Integer.parseInt(mp.getText().trim())))); }
-            catch (NumberFormatException ex) { ms.setText("-"); }
-            try { mv.setText(String.valueOf(ConfiguracionSistema.calcularMemoriaVirtual(Integer.parseInt(as.getText().trim())))); }
-            catch (NumberFormatException ex) { mv.setText("-"); }
-        };
-        javax.swing.event.DocumentListener alCambiar = new javax.swing.event.DocumentListener() {
-            @Override public void insertUpdate(javax.swing.event.DocumentEvent e){ recalcular.run(); }
-            @Override public void removeUpdate(javax.swing.event.DocumentEvent e){ recalcular.run(); }
-            @Override public void changedUpdate(javax.swing.event.DocumentEvent e){ recalcular.run(); }
-        };
-        mp.getDocument().addDocumentListener(alCambiar);
-        as.getDocument().addDocumentListener(alCambiar);
         campos.add(etiqueta("Memoria principal"));               campos.add(mp);
-        campos.add(etiqueta("Zona del S.O. (25 %)"));            campos.add(ms);
+        campos.add(etiqueta("Zona del S.O."));                   campos.add(ms);
         campos.add(etiqueta("Almacenamiento secundario"));       campos.add(as);
-        campos.add(etiqueta("Memoria virtual (12,5 % disco)"));  campos.add(mv);
+        campos.add(etiqueta("Memoria virtual (en disco)"));      campos.add(mv);
         t.getContenido().add(campos, BorderLayout.CENTER);
 
         Boton cargar = new Boton("Cargar archivo...", Tema.GRIS);
@@ -1099,10 +1080,11 @@ public class VentanaPrincipal extends JFrame {
         aplicar.addActionListener(e -> {
             try {
                 configuracion.setTamanos(
-                    Integer.parseInt(mp.getText().trim()), Integer.parseInt(as.getText().trim()));
+                    Integer.parseInt(mp.getText().trim()), Integer.parseInt(ms.getText().trim()),
+                    Integer.parseInt(as.getText().trim()), Integer.parseInt(mv.getText().trim()));
                 configuracion.guardarEnArchivo(new File(ConfiguracionSistema.ARCHIVO_POR_DEFECTO));
             } catch (NumberFormatException ex) {
-                JOptionPane.showMessageDialog(dlg, "La memoria principal y el disco deben ser números enteros.", "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(dlg, "Los cuatro tamaños deben ser números enteros.", "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(dlg, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
