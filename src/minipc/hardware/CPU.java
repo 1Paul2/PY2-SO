@@ -22,7 +22,6 @@ public class CPU {
     private int segundosRestantes = 0;
     private String[] instrActual;
     private List<String> pantalla = new ArrayList<>();
-    private boolean solicitudTeclado = false;
 
     public CPU(Memoria memoria){
         this.memoria = memoria;
@@ -69,7 +68,7 @@ public class CPU {
     public boolean isFlagIgual(){ return flagIgual; }
     public void setFlagIgual(boolean flag){ this.flagIgual = flag; }
 
-    // ===== Pantalla y teclado =====
+    // ===== Pantalla =====
 
     // E: texto (String) - línea a mostrar en la pantalla del Mini PC
     // S: no aplica (void)
@@ -77,15 +76,6 @@ public class CPU {
     public void imprimir(String texto){ pantalla.add(texto); }
     public List<String> getPantalla(){ return pantalla; }
     public void limpiarPantalla(){ pantalla.clear(); }
-
-    // E: no aplica
-    // S: boolean - true si la última instrucción fue INT 09H (pide teclado); se reinicia al leerlo
-    // R: ninguna
-    public boolean consumirSolicitudTeclado(){
-        boolean s = solicitudTeclado;
-        solicitudTeclado = false;
-        return s;
-    }
 
     // Para mostrar en la GUI cuántos segundos le faltan a la instrucción actual
     public int getSegundosRestantes(){ return segundosRestantes; }
@@ -174,11 +164,11 @@ public class CPU {
         return bcpActual == null || (segundosRestantes == 0 && PC >= getLimite());
     }
 
+    // Correccion - Poll: ya no reinicia la solicitud de teclado (INT 09H se quitó)
     // Llamalo desde Despachador.despachar() al cargar un proceso nuevo
     public void reiniciarInstruccion(){
         segundosRestantes = 0;
         instrActual = null;
-        solicitudTeclado = false;
     }
 
     // ===== Execute =====
@@ -436,12 +426,12 @@ public class CPU {
         }
     }
 
+    // Correccion - Poll: se quita INT 09H (entrada de teclado), en el proyecto 2 ya no se usa
     private void ejecutarINT(String codigo){
         if(codigo == null) return;
         switch (codigo) {
             case "20H": PC = getLimite(); break;
             case "10H": imprimir("P" + bcpActual.getIdProceso() + " > " + (DXTexto != null ? DXTexto : String.valueOf(DX))); break;   // pantalla
-            case "09H": solicitudTeclado = true; break;                                  // teclado
             case "21H": ejecutarINT21(); break;                                          // archivos
             default: throw new RuntimeException("Interrupción inválida: " + codigo);
         }

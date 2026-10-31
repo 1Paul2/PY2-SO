@@ -12,7 +12,6 @@ public class Pesos {
             case "PUSH": case "POP":   return 1;
             case "INT":
                 if("21H".equals(registro)) return 5;
-                if("09H".equals(registro)) return 1;
                 return 2;
             default: return 1;
         }

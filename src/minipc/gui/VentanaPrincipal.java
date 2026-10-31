@@ -46,7 +46,7 @@ import minipc.util.ParserASM;
 /**
  * VentanaPrincipal: interfaz gráfica del Mini PC. Muestra la cola de trabajos,
  * la CPU y sus registros, el BCP actual, la pila, la memoria principal (mapa
- * y tabla), el disco y la pantalla/teclado. Toda la lógica la delega en
+ * y tabla), el disco y la pantalla. Toda la lógica la delega en
  * GestorProcesos; esta clase solo dibuja y reacciona a los botones.
  */
 public class VentanaPrincipal extends JFrame {
@@ -56,9 +56,6 @@ public class VentanaPrincipal extends JFrame {
 
     // Ejecución automática
     private final Timer timerAuto;
-    // En Siguiente: mientras un proceso espera el teclado (INT 09H), el reloj
-    // avanza solo cada segundo real hasta que se ingrese el valor
-    private final Timer timerEspera;
     private boolean modoAutomatico = false;
 
     // ---- Encabezado y barra de herramientas ----
@@ -73,7 +70,7 @@ public class VentanaPrincipal extends JFrame {
 
     // ---- Recursos y dispositivos ----
     private BarraUso barraProcesos, barraMemoria, barraBCP, barraDisco, barraVirtual;
-    private Distintivo dispCPU, dispPantalla, dispTeclado, dispDisco;
+    private Distintivo dispCPU, dispPantalla, dispDisco;
 
     // ---- Memoria ----
     private Tarjeta tarjetaMemoria;
@@ -102,12 +99,10 @@ public class VentanaPrincipal extends JFrame {
     private DefaultTableModel modeloDisco;
     private JTable tablaDisco;
 
-    // ---- Pantalla y teclado ----
+    // ---- Pantalla ----
     private JTextPane areaPantalla;
-    private JTextField txtTeclado;
-    private Boton btnEnviar;
-    private JLabel lblTeclado;
 
+    // Correccion - Poll: se quita el timer que contaba los segundos de espera del teclado
     // E: no aplica
     // S: no aplica constructor
     // R: arma la ventana completa con la configuración de config.txt
@@ -125,7 +120,6 @@ public class VentanaPrincipal extends JFrame {
         add(crearCuerpo(), BorderLayout.CENTER);
 
         timerAuto = new Timer(400, e -> pasoAutomatico());
-        timerEspera = new Timer(1000, e -> segundoDeEspera());
 
         setMinimumSize(new Dimension(1280, 780));
         setSize(new Dimension(1500, 900));
@@ -286,6 +280,7 @@ public class VentanaPrincipal extends JFrame {
 
     // ------------------------- Columna izquierda -------------------------
 
+    // Correccion - Poll: se quita el dispositivo "Teclado (entrada)" (INT 09H ya no se usa)
     private JPanel crearColumnaIzquierda(){
         // Cola de trabajos (lista de trabajos + lista de procesos)
         tarjetaCola = new Tarjeta("Cola de trabajos", Tema.VERDE);
@@ -322,15 +317,13 @@ public class VentanaPrincipal extends JFrame {
 
         // Dispositivos
         Tarjeta dispositivos = new Tarjeta("Dispositivos", Tema.MORADO);
-        JPanel filas = new JPanel(new GridLayout(4, 1, 0, 6));
+        JPanel filas = new JPanel(new GridLayout(3, 1, 0, 6));
         filas.setOpaque(false);
         dispCPU = new Distintivo();
         dispPantalla = new Distintivo();
-        dispTeclado = new Distintivo();
         dispDisco = new Distintivo();
         filas.add(filaDispositivo("CPU 1", dispCPU));
         filas.add(filaDispositivo("Pantalla", dispPantalla));
-        filas.add(filaDispositivo("Teclado (entrada)", dispTeclado));
         filas.add(filaDispositivo("Disco", dispDisco));
         dispositivos.getContenido().add(filas, BorderLayout.NORTH);
 
@@ -363,6 +356,8 @@ public class VentanaPrincipal extends JFrame {
 
     // -------------------------- Columna central --------------------------
 
+    // Correccion - Poll: se quita la línea de entrada del teclado (etiqueta, campo y botón Enviar)
+    // debajo de la pantalla
     private JPanel crearColumnaCentral(){
         // Memoria principal: mapa visual + tabla
         tarjetaMemoria = new Tarjeta("Memoria principal", Tema.VERDE);
@@ -399,7 +394,7 @@ public class VentanaPrincipal extends JFrame {
         split.setDividerSize(8);
         tarjetaMemoria.getContenido().add(split, BorderLayout.CENTER);
 
-        // Pantalla + teclado
+        // Pantalla
         Tarjeta pantalla = new Tarjeta("Pantalla", new Color(0x0F766E));
         areaPantalla = new JTextPane();
         areaPantalla.setEditable(false);
@@ -407,24 +402,6 @@ public class VentanaPrincipal extends JFrame {
         areaPantalla.setBackground(new Color(0xFBFDFB));
         areaPantalla.setBorder(new EmptyBorder(8, 10, 8, 10));
         pantalla.getContenido().add(Componentes.scroll(areaPantalla), BorderLayout.CENTER);
-
-        JPanel entrada = new JPanel(new BorderLayout(8, 0));
-        entrada.setOpaque(false);
-        entrada.setBorder(new EmptyBorder(8, 0, 0, 0));
-        lblTeclado = new JLabel(">> Ingresar valor:");
-        lblTeclado.setFont(Tema.NEGRITA);
-        lblTeclado.setForeground(Tema.TEXTO_SUAVE);
-        txtTeclado = new JTextField();
-        txtTeclado.setFont(Tema.MONO_NORMAL);
-        txtTeclado.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(Tema.BORDE), new EmptyBorder(6, 8, 6, 8)));
-        btnEnviar = new Boton("Enviar", Tema.AMBAR);
-        entrada.add(lblTeclado, BorderLayout.WEST);
-        entrada.add(txtTeclado, BorderLayout.CENTER);
-        entrada.add(btnEnviar, BorderLayout.EAST);
-        pantalla.getContenido().add(entrada, BorderLayout.SOUTH);
-        txtTeclado.addActionListener(e -> enviarTeclado());
-        btnEnviar.addActionListener(e -> enviarTeclado());
 
         // Disco
         tarjetaDisco = new Tarjeta("Disco", Tema.MORADO);
@@ -620,58 +597,36 @@ public class VentanaPrincipal extends JFrame {
         }
     }
 
+    // Correccion - Poll: ya no se bloquea ni arranca el conteo de espera del teclado
     // Botón "Siguiente": 1 segundo de CPU
     private void pasoManual(){
         if (!validarHayProcesos()) return;
-        if (gestor.bloqueadoPorTeclado()) {
-            // Todos los procesos esperan el teclado: el tiempo ya corre solo; no se suman segundos extra con clics
-            avisar("Todos los procesos están esperando un valor de teclado.\nIngreselo en la Pantalla y presione Enter.");
-            return;
-        }
         gestor.ejecutarUnPaso();
         actualizarVista();
-        if (gestor.bloqueadoPorTeclado()) {
-            iniciarEsperaTeclado();
-        } else if (!gestor.hayProcesos()) {
+        if (!gestor.hayProcesos()) {
             finEjecucion();
         }
     }
 
-    // Arranca el conteo automático de segundos mientras se espera el teclado (modo Siguiente)
-    private void iniciarEsperaTeclado(){
-        if (!modoAutomatico && !timerEspera.isRunning()) timerEspera.start();
-    }
-
-    // Cada segundo real con la CPU ociosa esperando el teclado: suma 1 s al reloj
-    private void segundoDeEspera(){
-        if (gestor == null || !gestor.bloqueadoPorTeclado() || modoAutomatico) {
-            timerEspera.stop();
-            return;
-        }
-        gestor.ejecutarUnPaso();
-        actualizarVista();
-    }
-
+    // Correccion - Poll: se quita el aviso de "un proceso espera un valor de teclado"
     // Botón "Ejecutar": modo automático
     private void iniciarAutomatico(){
         if (!validarHayProcesos()) return;
         if (cmbVelocidad.getSelectedIndex() == 1) {          // instantánea
             gestor.ejecutarTodo();
             actualizarVista();
-            if (gestor.bloqueadoPorTeclado()) {
-                avisar("La ejecución se detuvo: un proceso espera un valor de teclado.");
-            } else if (!gestor.hayProcesos()) {
+            if (!gestor.hayProcesos()) {
                 finEjecucion();
             }
             return;
         }
         modoAutomatico = true;
-        timerEspera.stop();                 // en automático el timer principal cuenta la espera
         timerAuto.setDelay(retardoSeleccionado());
         timerAuto.start();
         actualizarBotones();
     }
 
+    // Correccion - Poll: el timer ya no se detiene esperando el teclado
     private void pasoAutomatico(){
         if (gestor == null || !gestor.hayProcesos()) {
             detenerAutomatico(false);
@@ -679,9 +634,7 @@ public class VentanaPrincipal extends JFrame {
             if (gestor != null) finEjecucion();
             return;
         }
-        if (!gestor.ejecutarUnPaso() && gestor.bloqueadoPorTeclado()) {
-            timerAuto.stop();       // se reanuda solo al ingresar el valor
-        }
+        gestor.ejecutarUnPaso();
         actualizarVista();
     }
 
@@ -706,22 +659,6 @@ public class VentanaPrincipal extends JFrame {
         if (r == JOptionPane.YES_OPTION) mostrarEstadisticas();
     }
 
-    private void enviarTeclado(){
-        if (gestor == null || !gestor.esperandoTeclado()) return;
-        String texto = txtTeclado.getText().trim();
-        try {
-            gestor.ingresarTeclado(Integer.parseInt(texto));
-            if (!gestor.bloqueadoPorTeclado()) timerEspera.stop();   // ya hay algo que ejecutar: el reloj deja de correr solo
-            txtTeclado.setText("");
-            if (modoAutomatico && !timerAuto.isRunning()) timerAuto.start();
-        } catch (NumberFormatException e) {
-            avisar("Ingresá un número entero entre 0 y 255.");
-        } catch (RuntimeException e) {
-            avisar(e.getMessage());
-        }
-        actualizarVista();
-    }
-
     // E: no aplica
     // S: no aplica (void)
     // R: pide confirmación si hay procesos sin terminar y cierra la aplicación
@@ -738,6 +675,7 @@ public class VentanaPrincipal extends JFrame {
         }
     }
 
+    // Correccion - Poll: ya no detiene el timer de espera ni limpia el campo del teclado
     // E: no aplica
     // S: no aplica (void)
     // R: siempre pide confirmación antes de borrar procesos, memoria, disco, pantalla y estadísticas
@@ -754,9 +692,7 @@ public class VentanaPrincipal extends JFrame {
             "Confirmar limpieza", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (r != JOptionPane.YES_OPTION) return;
         detenerAutomatico(false);
-        timerEspera.stop();
         gestor = null;
-        txtTeclado.setText("");
         actualizarVista();
     }
 
@@ -824,6 +760,7 @@ public class VentanaPrincipal extends JFrame {
         tarjetaCola.setExtra(gestor.getTodosLosProcesos().size() + " procesos · " + trabajos + " esperando memoria");
     }
 
+    // Correccion - Poll: se quita el estado del dispositivo teclado
     private void actualizarRecursos(){
         if (gestor == null) {
             int usuario = configuracion.getMemoriaPrincipal() - configuracion.getMemoriaSistema();
@@ -834,7 +771,6 @@ public class VentanaPrincipal extends JFrame {
             barraVirtual.setValor(0, configuracion.getMemoriaVirtual());
             dispCPU.setColores("Libre", Tema.GRIS, Tema.GRIS_CLARO);
             dispPantalla.setColores("Lista", Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
-            dispTeclado.setColores("Libre", Tema.GRIS, Tema.GRIS_CLARO);
             dispDisco.setColores("Sin archivos", Tema.GRIS, Tema.GRIS_CLARO);
             return;
         }
@@ -869,10 +805,6 @@ public class VentanaPrincipal extends JFrame {
 
         dispPantalla.setColores(gestor.getCpu().getPantalla().isEmpty() ? "Lista" : "Mostrando salida",
             Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
-
-        BCP esperando = gestor.getProcesoEsperandoTeclado();
-        if (esperando != null) dispTeclado.setColores("Esperando P" + esperando.getIdProceso(), Tema.AMBAR, Tema.AMBAR_CLARO);
-        else dispTeclado.setColores("Libre", Tema.GRIS, Tema.GRIS_CLARO);
 
         dispDisco.setColores(archivos + " archivo(s)", Tema.MORADO, Tema.MORADO_CLARO);
     }
@@ -1030,10 +962,10 @@ public class VentanaPrincipal extends JFrame {
         tablaDisco.repaint();
     }
 
+    // Correccion - Poll: se quita la habilitación del campo de teclado según el proceso en espera
     private void actualizarPantalla(){
         StyledDocument doc = areaPantalla.getStyledDocument();
         areaPantalla.setText("");
-        boolean esperando = gestor != null && gestor.esperandoTeclado();
 
         if (gestor != null) {
             for (String linea : gestor.getCpu().getPantalla()) {
@@ -1053,7 +985,7 @@ public class VentanaPrincipal extends JFrame {
                     StyleConstants.setForeground(a, Tema.VERDE_OSCURO);
                     StyleConstants.setBold(a, true);
                 } else {
-                    StyleConstants.setForeground(a, Tema.AZUL);   // valores ingresados por teclado
+                    StyleConstants.setForeground(a, Tema.AZUL);
                 }
                 try {
                     doc.insertString(doc.getLength(), linea + "\n", a);
@@ -1061,20 +993,6 @@ public class VentanaPrincipal extends JFrame {
             }
         }
         areaPantalla.setCaretPosition(doc.getLength());
-
-        txtTeclado.setEnabled(esperando);
-        btnEnviar.setEnabled(esperando);
-        if (esperando) {
-            BCP b = gestor.getProcesoEsperandoTeclado();
-            lblTeclado.setText(">> P" + b.getIdProceso() + " valor (0-255):");
-            lblTeclado.setForeground(Tema.AMBAR);
-            txtTeclado.setBackground(Tema.AMBAR_CLARO);
-            txtTeclado.requestFocusInWindow();
-        } else {
-            lblTeclado.setText(">> Ingresar valor:");
-            lblTeclado.setForeground(Tema.TEXTO_SUAVE);
-            txtTeclado.setBackground(Color.WHITE);
-        }
     }
 
     private void actualizarBotones(){
