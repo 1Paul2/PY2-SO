@@ -1,0 +1,6 @@
+#Configuracion del Mini PC
+#Sat Oct 31 00:12:26 CST 2026
+almacenamientoSecundario=512
+memoriaPrincipal=256
+memoriaSistema=64
+memoriaVirtual=64
