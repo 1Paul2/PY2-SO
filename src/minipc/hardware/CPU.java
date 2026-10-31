@@ -19,8 +19,6 @@ public class CPU {
     private Disco disco;          // para leer la parte del programa que está en memoria virtual
     private BCP bcpActual;
     private boolean flagIgual;
-    private int segundosRestantes = 0;
-    private String[] instrActual;
     private List<String> pantalla = new ArrayList<>();
 
     public CPU(Memoria memoria){
@@ -77,9 +75,6 @@ public class CPU {
     public List<String> getPantalla(){ return pantalla; }
     public void limpiarPantalla(){ pantalla.clear(); }
 
-    // Para mostrar en la GUI cuántos segundos le faltan a la instrucción actual
-    public int getSegundosRestantes(){ return segundosRestantes; }
-
     // E: no aplica
     // S: int - primera posición fuera del programa actual (base + alcance)
     // R: devuelve 0 si no hay proceso en la CPU
@@ -129,46 +124,27 @@ public class CPU {
         return bcpActual.getBaseVirtual() + (desplazamiento - bcpActual.getEnRAM());
     }
 
+    // Correccion - Poll: se quitan los pesos; cada instrucción dura 1 segundo, así que
+    // cada tick hace fetch, decode y execute completos
     // E: no aplica
-    // S: no aplica (void) - avanza 1 segundo de CPU; la instrucción se ejecuta
-    //    cuando se cumplen los segundos de su peso
+    // S: no aplica (void) - avanza 1 segundo de CPU y ejecuta una instrucción
     // R: debe haber un proceso en la CPU
     public void tick(){
         if(bcpActual == null) return;
-        if(segundosRestantes == 0){
-            fetch();
-            instrActual = decode(IR);
-            segundosRestantes = Pesos.de(instrActual[0], arg(instrActual, 1));
-        }
-        segundosRestantes--;
-        if(segundosRestantes == 0){
-            execute(instrActual);
-            instrActual = null;
-        }
+        fetch();
+        execute(decode(IR));
     }
 
-    // Ejecuta una instrucción completa, sin importar su peso (útil para pruebas)
-    public void pasoAPaso(){
-        do {
-            tick();
-        } while(segundosRestantes > 0);
-    }
-
+    // Correccion - Poll: ya no espera a que termine el peso; ejecuta tick por tick
     public void ejecutarTodo(){
         while(!programaTerminado()){
-            pasoAPaso();
+            tick();
         }
     }
 
+    // Correccion - Poll: ya no revisa los segundos restantes del peso
     public boolean programaTerminado(){
-        return bcpActual == null || (segundosRestantes == 0 && PC >= getLimite());
-    }
-
-    // Correccion - Poll: ya no reinicia la solicitud de teclado (INT 09H se quitó)
-    // Llamalo desde Despachador.despachar() al cargar un proceso nuevo
-    public void reiniciarInstruccion(){
-        segundosRestantes = 0;
-        instrActual = null;
+        return bcpActual == null || PC >= getLimite();
     }
 
     // ===== Execute =====

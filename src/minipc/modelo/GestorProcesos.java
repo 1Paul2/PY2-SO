@@ -160,12 +160,12 @@ public class GestorProcesos {
         }
     }
 
+    // Correccion - Poll: ya no reinicia el peso de la instrucción (cada instrucción dura 1 s)
     private void finalizar(BCP bcp){
         despachador.capturar(bcp);
         bcp.setTiempoFin(reloj);
         planificador.terminar(bcp);
         cpu.setBcpActual(null);
-        cpu.reiniciarInstruccion();
     }
 
     // Correccion - Poll: el aviso del despachador ya no depende de que haya procesos esperando

@@ -85,7 +85,6 @@ public class VentanaPrincipal extends JFrame {
     private JLabel lblProcesoActual, lblInstruccion;
     private Distintivo distEstadoCPU;
     private final JLabel[] valoresRegistro = new JLabel[10];  // PC, IR, AC, AX, BX, CX, DX, FLAG, AH, AL
-    private JProgressBar barraInstruccion;
 
     // ---- Pila ----
     private PanelPila panelPila;
@@ -436,6 +435,7 @@ public class VentanaPrincipal extends JFrame {
 
     // -------------------------- Columna derecha --------------------------
 
+    // Correccion - Poll: se quita la barra de progreso de la instrucción según su peso
     private JPanel crearColumnaDerecha(){
         // CPU
         Tarjeta cpu = new Tarjeta("CPU 1", Tema.VERDE);
@@ -469,13 +469,7 @@ public class VentanaPrincipal extends JFrame {
         lblInstruccion = new JLabel("Instrucción en curso: -");
         lblInstruccion.setFont(Tema.PEQUENA);
         lblInstruccion.setForeground(Tema.TEXTO_SUAVE);
-        barraInstruccion = new JProgressBar(0, 1);
-        barraInstruccion.setForeground(Tema.VERDE);
-        barraInstruccion.setBackground(Tema.VERDE_CLARO);
-        barraInstruccion.setBorderPainted(false);
-        barraInstruccion.setPreferredSize(new Dimension(10, 8));
         instr.add(lblInstruccion, BorderLayout.NORTH);
-        instr.add(barraInstruccion, BorderLayout.CENTER);
         contCPU.add(instr, BorderLayout.SOUTH);
         cpu.getContenido().add(contCPU, BorderLayout.CENTER);
 
@@ -809,6 +803,7 @@ public class VentanaPrincipal extends JFrame {
         dispDisco.setColores(archivos + " archivo(s)", Tema.MORADO, Tema.MORADO_CLARO);
     }
 
+    // Correccion - Poll: ya no muestra "N de M s" según el peso; cada instrucción dura 1 s
     private void actualizarCPU(){
         CPU cpu = gestor == null ? null : gestor.getCpu();
         BCP actual = cpu == null ? null : cpu.getBcpActual();
@@ -829,8 +824,6 @@ public class VentanaPrincipal extends JFrame {
             valoresRegistro[7].setText("-");
             valoresRegistro[6].setFont(Tema.MONO_GRANDE);
             lblInstruccion.setText("Instrucción en curso: -");
-            barraInstruccion.setMaximum(1);
-            barraInstruccion.setValue(0);
             return;
         }
         valoresRegistro[0].setText(String.valueOf(cpu.getPC()));
@@ -850,20 +843,13 @@ public class VentanaPrincipal extends JFrame {
         valoresRegistro[8].setText(String.format("%d (%02XH)", cpu.getAH(), cpu.getAH()));
         valoresRegistro[9].setText(String.valueOf(cpu.getAL()));
 
-        int restantes = cpu.getSegundosRestantes();
-        if (actual != null && restantes > 0) {
-            String[] partes = cpu.getIR().trim().split("[,\\s]+");
-            int peso = minipc.hardware.Pesos.de(partes[0], partes.length > 1 ? partes[1] : null);
+        if (actual != null && cpu.getIR() != null && !cpu.getIR().isEmpty()) {
             boolean desdeVirtual = actual.usaMemoriaVirtual()
                 && cpu.getPC() - 1 - actual.getDireccionBase() >= actual.getEnRAM();
-            lblInstruccion.setText("Ejecutando " + cpu.getIR() + "  ·  " + (peso - restantes) + " de " + peso + " s"
+            lblInstruccion.setText("Última instrucción: " + cpu.getIR() + "  ·  1 s"
                 + (desdeVirtual ? "  ·  desde memoria virtual" : ""));
-            barraInstruccion.setMaximum(peso);
-            barraInstruccion.setValue(peso - restantes);
         } else {
-            lblInstruccion.setText(actual == null ? "Instrucción en curso: -" : "Lista para la siguiente instrucción");
-            barraInstruccion.setMaximum(1);
-            barraInstruccion.setValue(actual == null ? 0 : 1);
+            lblInstruccion.setText(actual == null ? "Instrucción en curso: -" : "Lista para la primera instrucción");
         }
     }
 
