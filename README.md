@@ -51,7 +51,7 @@ memoria, el disco, los BCP y la lista de trabajos.
 - Las **21 instrucciones** de la tabla con sus **pesos** (incluye `INT 21H` para manejo de archivos).
 - Ejecución **paso a paso** (cada clic = 1 segundo de CPU) y **automática** (1 segundo real por paso).
 - Interrupciones / llamadas al sistema: `INT 20H`, `INT 10H` (pantalla), `INT 09H` (teclado 0–255) e `INT 21H` (archivos).
-- **Despachador** y **cambios de contexto** (al terminar un proceso o ante un error).
+- **Despachador** y **cambios de contexto** (cuando un proceso se bloquea por `INT 09H`, al terminar o ante un error).
 - **Memoria virtual**: si un programa no cabe completo en RAM, la parte restante se guarda en la memoria virtual del disco.
 - **Desbordamiento de memoria**: se rechaza un programa más grande que la RAM de usuario + la memoria virtual.
 - **Planificador FCFS**.
@@ -67,8 +67,8 @@ memoria, el disco, los BCP y la lista de trabajos.
 ### Decisiones de diseño a tomar en cuenta
 
 - El enunciado menciona "7 estados": se siguió el modelo de 7 estados del libro de Stallings, donde *Suspendido* se divide en **Suspendido en espera** (bloqueado y fuera de memoria) y **Suspendido preparado** (ya ocurrió su evento pero sigue fuera de memoria).
-- El "peso" de `INT 09H` se tomó como 1 segundo. Según lo indicado por el profesor, con `INT 09H` el proceso **no sale de la CPU**: queda **En espera** en esa instrucción, la ejecución se detiene hasta que el usuario ingrese el número y luego continúa normalmente.
-- Por esa regla, los estados **Suspendido en espera** y **Suspendido preparado** están implementados en el planificador (suspensión y reubicación), pero en la práctica no se activan, porque un proceso que espera el teclado nunca deja la CPU.
+- El "peso" de `INT 09H` se tomó como 1 segundo. Con `INT 09H` el proceso **sale de la CPU** (cambio de contexto) y queda **En espera** en la lista de espera; mientras tanto el despachador ejecuta al siguiente proceso preparado. Al ingresar el número vuelve a **Preparado** y continúa con la instrucción siguiente cuando le toque la CPU.
+- Si un trabajo no puede entrar a memoria (5 procesos o falta de espacio) y hay un proceso **En espera**, este se **suspende** (sale de memoria). Al recibir su valor pasa a **Suspendido preparado** y se recarga, con su PC reubicado, cuando haya espacio.
 - Los procesos después del 5.º **esperan** en la lista de trabajos (no van a memoria virtual); la memoria virtual se usa cuando un programa no cabe completo en la RAM.
 
 ---
@@ -151,10 +151,13 @@ Cargar .asm ──► ParserASM valida ──► se guarda en Disco ──► se
 [Lista de trabajos: Nuevo]
       │  Planificador de trabajos (hay memoria y < 5 procesos)
       ▼
-[Lista de procesos: Preparado] ──FCFS──► Despachador ──► CPU: Ejecución ◄─┐
-                                                             │            │ valor
-                                                  INT 09H ──►│ En espera ─┘ ingresado
-                                                             │ (la CPU se detiene)
+[Lista de procesos: Preparado] ──FCFS──► Despachador ──► CPU: Ejecución
+      ▲                                                      │
+      │ valor ingresado                           INT 09H ──►│ (cambio de contexto)
+      └──────────── [Lista de espera: En espera] ◄───────────┤
+                     │ falta memoria para un trabajo         │
+                     ▼                                       │
+          Suspendido en espera ──valor──► Suspendido preparado ──► (se recarga)
                                                              ▼
                                    INT 20H o error ──► Finalizado (libera memoria)
 ```
@@ -191,7 +194,7 @@ Cargar .asm ──► ParserASM valida ──► se guarda en Disco ──► se
 | `SWAP AX, BX` | Intercambia los registros | 1 |
 | `INT 20H` | Finaliza el programa | 2 |
 | `INT 10H` | Imprime DX en la pantalla | 2 |
-| `INT 09H` | Lee del teclado un número 0–255 y lo guarda en DX. El proceso queda En espera en la CPU y la ejecución se detiene hasta que se ingresa el valor | 1 + espera |
+| `INT 09H` | Lee del teclado un número 0–255 y lo guarda en DX. El proceso sale de la CPU y queda En espera hasta que se ingresa el valor; mientras tanto se ejecutan los demás | 1 |
 | `INT 21H` | Archivos: AH = `3CH` crear, `3DH` abrir, `4DH` leer, `40H` escribir, `41H` eliminar. DX = nombre del archivo, AL = dato | 5 |
 | `JMP ±n` | Salto relativo | 2 |
 | `CMP R1, R2` | Compara dos registros | 2 |
@@ -226,9 +229,9 @@ planificador y despachador.
 | Método | Qué hace |
 |---|---|
 | `cargarPrograma(instrucciones, nombre)` | Valida el tamaño (desbordamiento de memoria), guarda el programa en disco, crea el BCP y lo pone en la lista de trabajos |
-| `ejecutarUnPaso()` | 1 segundo de CPU: despacha si la CPU está libre, ejecuta `cpu.tick()` y maneja fin de programa y errores (cambio de contexto). Si hay un `INT 09H` pendiente no avanza |
-| `ejecutarTodo()` | Repite `ejecutarUnPaso()` hasta terminar o hasta que un proceso pida teclado |
-| `ingresarTeclado(valor)` | Entrega el valor (0–255) al proceso detenido en `INT 09H`: va a DX y el proceso continúa en la CPU |
+| `ejecutarUnPaso()` | 1 segundo de CPU: despacha si la CPU está libre, ejecuta `cpu.tick()` y maneja fin de programa y errores (cambio de contexto). Si `INT 09H` bloquea al proceso, despacha al siguiente; si todos esperan teclado, la CPU queda ociosa |
+| `ejecutarTodo()` | Repite `ejecutarUnPaso()` hasta terminar o hasta que todos los procesos restantes esperen teclado |
+| `ingresarTeclado(valor)` | Entrega el valor (0–255) al primer proceso de la lista de espera: va al DX de su BCP y el proceso pasa a Preparado (o a Suspendido preparado) |
 | `getEstadisticas()` | Inicio, final, duración y tiempo de CPU de cada proceso |
 
 ### `modelo.Planificador`
@@ -276,18 +279,20 @@ Validación de los `.asm` y lectura/escritura de `config.txt`.
 
 ## Teclado (INT 09H) y estado En espera
 
-Cuando un proceso ejecuta `INT 09H`, **no sale de la CPU**: pasa a **En espera**
-en esa misma instrucción y la ejecución se detiene (ni Paso a paso ni Ejecutar
-avanzan, y ningún otro proceso entra). Al ingresar el número (0–255) se guarda en
-DX, el proceso vuelve a **Ejecución** y continúa con la siguiente instrucción.
+Cuando un proceso ejecuta `INT 09H`, el S.O. guarda su contexto en el BCP, lo pasa a
+**En espera** (lista de espera) y el despachador pone en la CPU al siguiente proceso
+preparado. Si todos los procesos restantes esperan el teclado, la CPU queda ociosa
+(el reloj corre, pero no se suma tiempo de CPU a nadie). Al ingresar el número
+(0–255) se guarda en el DX del BCP del primer proceso en espera, que pasa a
+**Preparado** y continúa con la siguiente instrucción cuando vuelva a la CPU.
 
 ## Estado Suspendido
 
-El planificador implementa la suspensión del modelo de 7 estados: un proceso
-**En espera** fuera de la CPU podría retirarse de memoria (**Suspendido en espera**)
-y, al ocurrir su evento, pasar a **Suspendido preparado** para recargarse luego
-con su PC reubicado. Como en este proyecto el proceso que espera el teclado no
-deja la CPU, esta situación no se presenta en la ejecución.
+El planificador implementa la suspensión del modelo de 7 estados: si un trabajo no
+puede entrar a memoria, un proceso **En espera** se retira de memoria
+(**Suspendido en espera**) y, al recibir su valor, pasa a **Suspendido preparado**
+para recargarse luego con su PC reubicado. Esto ocurre, por ejemplo, al cargar 6 o
+más programas cuando uno de los 5 que están en memoria espera el teclado.
 
 ---
 
