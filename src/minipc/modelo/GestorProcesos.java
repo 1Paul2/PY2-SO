@@ -234,10 +234,8 @@ public class GestorProcesos {
 
     public int getReloj(){ return reloj; }
 
-    public String getHoraSimulada(){
-        return horaArranque.plusSeconds(reloj).format(FORMATO_HORA);
-    }
-
+    // Correccion - Poll: se quitó getHoraSimulada(); horaDe() queda solo porque la usan las
+    // estadísticas, que por ahora se mantienen como en el proyecto 1
     // E: segundos (int) - segundos simulados desde el arranque
     // S: String - hora "HH:mm:ss" correspondiente
     // R: ninguna

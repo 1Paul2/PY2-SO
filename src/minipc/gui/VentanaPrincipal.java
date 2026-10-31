@@ -59,7 +59,7 @@ public class VentanaPrincipal extends JFrame {
     private boolean modoAutomatico = false;
 
     // ---- Encabezado y barra de herramientas ----
-    private JLabel lblReloj, lblHora;
+    private JLabel lblReloj;
     private Boton btnCargar, btnEjecutar, btnPaso, btnDetener, btnLimpiar, btnEstadisticas, btnConfigurar, btnSalir;
     private JComboBox<String> cmbVelocidad;
 
@@ -131,6 +131,7 @@ public class VentanaPrincipal extends JFrame {
     //ENCABEZADO
 
 
+    // Correccion - Poll: se quita el chip de hora real; el tiempo se muestra solo en segundos desde 0
     private JPanel crearEncabezado(){
         JPanel panel = new JPanel(new BorderLayout(0, 12));
         panel.setOpaque(false);
@@ -169,9 +170,7 @@ public class VentanaPrincipal extends JFrame {
         JPanel reloj = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         reloj.setOpaque(false);
         lblReloj = chip("Tiempo  0 s", Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
-        lblHora = chip("--:--:--", Tema.AZUL, Tema.AZUL_CLARO);
         reloj.add(lblReloj);
-        reloj.add(lblHora);
         fila1.add(reloj, BorderLayout.EAST);
         panel.add(fila1, BorderLayout.NORTH);
 
@@ -725,14 +724,13 @@ public class VentanaPrincipal extends JFrame {
         actualizarBotones();
     }
 
+    // Correccion - Poll: se quita la hora real (HH:mm:ss); queda solo el tiempo en segundos desde 0
     private void actualizarEncabezado(){
         if (gestor == null) {
             ((Distintivo) lblReloj).setColores("Tiempo  0 s", Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
-            ((Distintivo) lblHora).setColores("--:--:--", Tema.AZUL, Tema.AZUL_CLARO);
             return;
         }
         ((Distintivo) lblReloj).setColores("Tiempo  " + gestor.getReloj() + " s", Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
-        ((Distintivo) lblHora).setColores("Hora  " + gestor.getHoraSimulada(), Tema.AZUL, Tema.AZUL_CLARO);
     }
 
     private void actualizarCola(){
@@ -853,6 +851,7 @@ public class VentanaPrincipal extends JFrame {
         }
     }
 
+    // Correccion - Poll: el tiempo de inicio se muestra en segundos desde 0, no en hora real
     private void actualizarBCP(){
         BCP b = (gestor == null) ? null : gestor.getCpu().getBcpActual();
         panelPila.setBCP(b);
@@ -869,7 +868,7 @@ public class VentanaPrincipal extends JFrame {
             : b.getTamanioProceso() + " posiciones");
         valoresBCP[4].setText(String.valueOf(b.getPrioridad()));
         valoresBCP[5].setText("CPU " + b.getCpuId());
-        valoresBCP[6].setText(b.getTiempoInicio() >= 0 ? gestor.horaDe(b.getTiempoInicio()) : "-");
+        valoresBCP[6].setText(b.getTiempoInicio() >= 0 ? "t = " + b.getTiempoInicio() + " s" : "-");
         valoresBCP[7].setText(b.getTiempoEmpleado() + " s");
         valoresBCP[8].setText(b.getDireccionBCP() >= 0 ? "Memoria[" + b.getDireccionBCP() + "]" : "-");
         valoresBCP[9].setText(String.join(", ", b.getArchivosAbiertos()));
