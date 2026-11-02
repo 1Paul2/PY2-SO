@@ -196,7 +196,8 @@ public class GestorProcesos {
         return cpu.getBcpActual() != null ? 1 : 0;
     }
 
-    // Escribe cada BCP activo en la zona del S.O. de la memoria (una posición por BCP)
+    // Correccion - Poll (observación PY1): cada BCP ocupa un bloque de BCP.TAMANO_BLOQUE posiciones
+    // Escribe cada BCP activo en su bloque de la zona del S.O., un campo por posición
     private void actualizarBCPsEnMemoria(){
         BCP enCpu = cpu.getBcpActual();
         if (enCpu != null) {
@@ -211,9 +212,13 @@ public class GestorProcesos {
         }
     }
 
+    // Correccion - Poll (observación PY1): antes el BCP entero se escribía como un solo texto en una
+    // posición; ahora cada campo (estado, PC, IR, AC, …, Sig) va en su propia posición del bloque
     private void escribirBCP(BCP b){
-        if (b.getDireccionBCP() >= 0) {
-            memoria.escribir(b.getDireccionBCP(), b.aTextoMemoria());
+        if (b.getDireccionBCP() < 0) return;
+        String[] celdas = b.aCeldasMemoria();
+        for (int i = 0; i < celdas.length; i++) {
+            memoria.escribir(b.getDireccionBCP() + i, celdas[i]);
         }
     }
 

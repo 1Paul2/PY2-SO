@@ -23,7 +23,8 @@ public class Planificador {
     private Memoria memoria;
     private Disco disco;
 
-    // Posiciones de la zona del S.O. donde se guardan los BCP (una por BCP)
+    // Bloques de la zona del S.O. donde se guardan los BCP: el bloque i empieza en la
+    // posición i * BCP.TAMANO_BLOQUE (true = ocupado)
     private boolean[] slotsBCP;
 
     public static final int MAX_PROCESOS_EN_MEMORIA = 5;
@@ -40,9 +41,11 @@ public class Planificador {
         return copia;
     }
 
+    // Correccion - Poll (observación PY1): cada BCP ocupa un bloque de BCP.TAMANO_BLOQUE posiciones
+    // (antes 1 sola), así que la cantidad de BCP que caben es zona del S.O. / TAMANO_BLOQUE
     // E: memoria (Memoria), disco (Disco)
     // S: no aplica (constructor)
-    // R: la zona del S.O. debe tener al menos 1 posición para guardar BCPs
+    // R: la zona del S.O. debe tener al menos BCP.TAMANO_BLOQUE posiciones para guardar un BCP
     public Planificador(Memoria memoria, Disco disco) {
         this.listaTrabajos = new ColaTrabajo();
         this.listaProcesos = new ColaTrabajo();
@@ -50,8 +53,15 @@ public class Planificador {
         this.listaFinalizados = new ColaTrabajo();
         this.memoria = memoria;
         this.disco = disco;
-        int slots = Math.min(MAX_PROCESOS_EN_MEMORIA, memoria.getInicioUsuario());
+        int slots = Math.min(MAX_PROCESOS_EN_MEMORIA, memoria.getInicioUsuario() / BCP.TAMANO_BLOQUE);
         this.slotsBCP = new boolean[slots];
+    }
+
+    // E: no aplica
+    // S: int - cuántos BCP caben en la zona del S.O. (como máximo MAX_PROCESOS_EN_MEMORIA)
+    // R: ninguna
+    public int getCapacidadBCP(){
+        return slotsBCP.length;
     }
 
     // E: bcp (BCP) - proceso recién creado
@@ -82,6 +92,8 @@ public class Planificador {
     // E: bcp (BCP) - primer trabajo de la lista de trabajos
     // S: boolean - true si se pudo cargar en memoria (y pasó a la lista de procesos)
     // R: el programa debe caber completo en un hueco contiguo de la zona de usuario
+    // Correccion - Poll (observación PY1): el BCP recibe la dirección donde empieza su bloque
+    // (bloque * BCP.TAMANO_BLOQUE), no un índice de una sola posición
     private boolean intentarCargar(BCP bcp){
         int slot = slotLibre();
         if (slot == -1) return false;                        // no hay espacio para su BCP
@@ -106,7 +118,7 @@ public class Planificador {
         }
 
         slotsBCP[slot] = true;
-        bcp.setDireccionBCP(slot);
+        bcp.setDireccionBCP(slot * BCP.TAMANO_BLOQUE);
         bcp.setEstado("Preparado");
 
         listaTrabajos.desencolar();
@@ -133,14 +145,15 @@ public class Planificador {
     }
 
     // Correccion - Poll: ya no libera memoria virtual; el programa ocupa solo RAM (base + alcance)
-    // Libera la RAM y la posición del BCP de un proceso
+    // Correccion - Poll (observación PY1): libera el bloque completo del BCP (TAMANO_BLOQUE posiciones)
+    // Libera la RAM y el bloque del BCP de un proceso
     private void liberarMemoria(BCP bcp){
         if (bcp.getDireccionBase() >= 0) {
             memoria.liberar(bcp.getDireccionBase(), bcp.getTamanioProceso());
         }
         if (bcp.getDireccionBCP() >= 0) {
-            memoria.liberar(bcp.getDireccionBCP(), 1);
-            slotsBCP[bcp.getDireccionBCP()] = false;
+            memoria.liberar(bcp.getDireccionBCP(), BCP.TAMANO_BLOQUE);
+            slotsBCP[bcp.getDireccionBCP() / BCP.TAMANO_BLOQUE] = false;
             bcp.setDireccionBCP(-1);
         }
         bcp.setDireccionBase(-1);
@@ -201,7 +214,7 @@ public class Planificador {
     // como "Finalizado con error" en vez de "Finalizado"
     // E: bcp (BCP) - proceso que terminó; conError (boolean) - true si terminó por un error
     // S: no aplica (void)
-    // R: libera su memoria y la posición de su BCP
+    // R: libera su memoria y el bloque de su BCP
     public void terminar(BCP bcp, boolean conError) {
         bcp.setEstado(conError ? BCP.FINALIZADO_ERROR : BCP.FINALIZADO);
         int base = bcp.getDireccionBase();

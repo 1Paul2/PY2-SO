@@ -31,6 +31,14 @@ public class BCP {
     public static final String FINALIZADO = "Finalizado";
     public static final String FINALIZADO_ERROR = "Finalizado con error";
 
+    // Correccion - Poll (observación PY1): el BCP se guarda en la zona del S.O. campo por campo,
+    // un campo por posición de memoria; este es el tamaño del bloque que ocupa cada BCP
+    public static final String[] CAMPOS_MEMORIA = {
+        "Estado", "PC", "IR", "AC", "AX", "BX", "CX", "DX",
+        "AH/AL/CMP", "Pila", "Contable", "Archivos", "Base", "Alcance", "Prioridad", "Sig BCP"
+    };
+    public static final int TAMANO_BLOQUE = CAMPOS_MEMORIA.length;   // 16 posiciones
+
     private int idProceso;
     private String estado;
     private int pcGuardado;
@@ -290,7 +298,7 @@ public class BCP {
         public int getTiempoFin(){ return tiempoFin; }
         public void setTiempoFin(int t){ this.tiempoFin = t; }
 
-        // Posición de la zona del S.O. donde está guardado este BCP (-1 si no está en memoria)
+        // Primera posición del bloque de la zona del S.O. donde está guardado este BCP (-1 si no está en memoria)
         public int getDireccionBCP(){ return direccionBCP; }
         public void setDireccionBCP(int dir){ this.direccionBCP = dir; }
 
@@ -307,20 +315,37 @@ public class BCP {
         }
 
         // Correccion - Poll: se quitan los campos RAM y Virtual (memoria virtual partida)
+        // Correccion - Poll (observación PY1): reemplaza a aTextoMemoria(), que juntaba todo el BCP en
+        // un solo texto para una sola posición. Ahora cada elemento del BCP tiene su propia posición
+        // en la zona del S.O., en el orden de CAMPOS_MEMORIA
         // E: no aplica
-        // S: String - el BCP serializado en una línea, tal como se guarda en la memoria del S.O.
-        //    "Sig" es la DIRECCIÓN de memoria del siguiente BCP en su cola (-1 si es el último)
+        // S: String[] - TAMANO_BLOQUE valores, uno por posición del bloque del BCP.
+        //    "Sig BCP" es la DIRECCIÓN de memoria donde empieza el bloque del siguiente BCP de su cola
+        //    (-1 si es el último)
         // R: ninguna
-        public String aTextoMemoria(){
+        public String[] aCeldasMemoria(){
             int sig = (siguiente != null) ? siguiente.getDireccionBCP() : -1;
-            return "BCP" + idProceso + "|" + estado
-                + "|PC=" + pcGuardado + "|AC=" + acGuardado
-                + "|AX=" + axGuardado + "|BX=" + bxGuardado
-                + "|CX=" + cxGuardado + "|DX=" + (dxTextoGuardado != null ? "\"" + dxTextoGuardado + "\"" : dxGuardado)
-                + "|AH=" + ahGuardado + "|AL=" + alGuardado
-                + "|IR=" + irGuardado + "|Pila=" + pilaTexto()
-                + "|Base=" + direccionBase + "|Alcance=" + tamanioProceso
-                + "|Sig=" + sig;
+            String dx = dxTextoGuardado != null ? "\"" + dxTextoGuardado + "\"" : String.valueOf(dxGuardado);
+            String archivos = archivosAbiertos.isEmpty() ? "-" : String.join(", ", archivosAbiertos);
+            return new String[]{
+                estado,
+                "PC=" + pcGuardado,
+                "IR=" + (irGuardado == null || irGuardado.isEmpty() ? "-" : irGuardado),
+                "AC=" + acGuardado,
+                "AX=" + axGuardado,
+                "BX=" + bxGuardado,
+                "CX=" + cxGuardado,
+                "DX=" + dx,
+                "AH=" + String.format("%02XH", ahGuardado) + " AL=" + alGuardado + " CMP=" + (flagGuardado ? "1" : "0"),
+                "Pila=" + pilaTexto() + " SP=" + topePila,
+                "CPU=" + (cpuId < 0 ? "-" : cpuId) + " ini=" + (tiempoInicio < 0 ? "-" : tiempoInicio)
+                    + " emp=" + tiempoEmpleado,
+                "Archivos=" + archivos,
+                "Base=" + direccionBase,
+                "Alcance=" + tamanioProceso,
+                "Prioridad=" + prioridad,
+                "Sig=" + sig
+            };
         }
 
         // ---- INT 21H y suspensión ----

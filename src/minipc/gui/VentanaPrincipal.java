@@ -329,7 +329,8 @@ public class VentanaPrincipal extends JFrame {
     private JPanel crearLeyendaEstados(){
         JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 6));
         p.setOpaque(false);
-        for (String e : new String[]{"Nuevo", "Preparado", "Ejecución", "En espera", "Suspendido en espera", "Suspendido preparado", BCP.FINALIZADO, BCP.FINALIZADO_ERROR}) {
+        for (String e : new String[]{"Nuevo", "Preparado", "Ejecución", "En espera", "Suspendido en espera",
+                                     "Suspendido preparado", BCP.FINALIZADO, BCP.FINALIZADO_ERROR}) {
             Distintivo d = new Distintivo();
             d.setEstado(e);
             p.add(d);
@@ -367,10 +368,11 @@ public class VentanaPrincipal extends JFrame {
         tablaMemoria.setRowHeight(22);
         RenderMemoria render = new RenderMemoria();
         for (int i = 0; i < 3; i++) tablaMemoria.getColumnModel().getColumn(i).setCellRenderer(render);
-        tablaMemoria.getColumnModel().getColumn(0).setPreferredWidth(70);
-        tablaMemoria.getColumnModel().getColumn(0).setMinWidth(64);
-        tablaMemoria.getColumnModel().getColumn(1).setPreferredWidth(300);
-        tablaMemoria.getColumnModel().getColumn(2).setPreferredWidth(60);
+        tablaMemoria.getColumnModel().getColumn(0).setPreferredWidth(52);
+        tablaMemoria.getColumnModel().getColumn(0).setMinWidth(50);
+        tablaMemoria.getColumnModel().getColumn(1).setPreferredWidth(260);
+        tablaMemoria.getColumnModel().getColumn(2).setPreferredWidth(64);    // "BCP P1"
+        tablaMemoria.getColumnModel().getColumn(2).setMinWidth(60);
 
         JPanel mapaConLeyenda = new JPanel(new BorderLayout(0, 6));
         mapaConLeyenda.setOpaque(false);
@@ -383,7 +385,7 @@ public class VentanaPrincipal extends JFrame {
         mapaConLeyenda.add(leyenda, BorderLayout.SOUTH);
 
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, mapaConLeyenda, Componentes.scroll(tablaMemoria));
-        split.setResizeWeight(0.42);
+        split.setResizeWeight(0.32);   // la tabla necesita espacio para leer los campos del BCP
         split.setBorder(null);
         split.setOpaque(false);
         split.setDividerSize(8);
@@ -752,12 +754,15 @@ public class VentanaPrincipal extends JFrame {
 
     // Correccion - Poll: se quita el estado del dispositivo teclado, y la memoria usada se cuenta
     // con el alcance completo del proceso (ya no hay parte en memoria virtual)
+    // Correccion - Poll (observación PY1): la capacidad de la zona del S.O. se cuenta en bloques de
+    // BCP (16 posiciones cada uno), no en posiciones sueltas
     private void actualizarRecursos(){
         if (gestor == null) {
             int usuario = configuracion.getMemoriaPrincipal() - configuracion.getMemoriaSistema();
             barraProcesos.setValor(0, Planificador.MAX_PROCESOS_EN_MEMORIA);
             barraMemoria.setValor(0, usuario);
-            barraBCP.setValor(0, Math.min(Planificador.MAX_PROCESOS_EN_MEMORIA, configuracion.getMemoriaSistema()));
+            barraBCP.setValor(0, Math.min(Planificador.MAX_PROCESOS_EN_MEMORIA,
+                configuracion.getMemoriaSistema() / BCP.TAMANO_BLOQUE));
             barraDisco.setValor(0, configuracion.getAlmacenamientoSecundario());
             barraVirtual.setValor(0, configuracion.getMemoriaVirtual());
             dispCPU.setColores("Libre", Tema.GRIS, Tema.GRIS_CLARO);
@@ -786,7 +791,7 @@ public class VentanaPrincipal extends JFrame {
         }
         barraProcesos.setValor(gestor.procesosEnMemoria(), Planificador.MAX_PROCESOS_EN_MEMORIA);
         barraMemoria.setValor(usuarioUsado, usuarioTotal);
-        barraBCP.setValor(bcps, Math.min(Planificador.MAX_PROCESOS_EN_MEMORIA, m.getInicioUsuario()));
+        barraBCP.setValor(bcps, gestor.getPlanificador().getCapacidadBCP());
         barraDisco.setValor(discoUsado, d.getTamanoTotal());
         barraVirtual.setValor(d.virtualUsada(), d.getTamanoMemoriaVirtual());
 
@@ -850,6 +855,7 @@ public class VentanaPrincipal extends JFrame {
 
     // Correccion - Poll: el tiempo de inicio se muestra en segundos desde 0, no en hora real,
     // y el alcance ya no se divide en "RAM + virtual"
+    // Correccion - Poll (observación PY1): la dirección del BCP muestra el bloque completo que ocupa
     private void actualizarBCP(){
         BCP b = (gestor == null) ? null : gestor.getCpu().getBcpActual();
         panelPila.setBCP(b);
@@ -866,12 +872,15 @@ public class VentanaPrincipal extends JFrame {
         valoresBCP[5].setText("CPU " + b.getCpuId());
         valoresBCP[6].setText(b.getTiempoInicio() >= 0 ? "t = " + b.getTiempoInicio() + " s" : "-");
         valoresBCP[7].setText(b.getTiempoEmpleado() + " s");
-        valoresBCP[8].setText(b.getDireccionBCP() >= 0 ? "Memoria[" + b.getDireccionBCP() + "]" : "-");
+        valoresBCP[8].setText(b.getDireccionBCP() >= 0
+            ? "Memoria[" + b.getDireccionBCP() + "–" + (b.getDireccionBCP() + BCP.TAMANO_BLOQUE - 1) + "]" : "-");
         valoresBCP[9].setText(String.join(", ", b.getArchivosAbiertos()));
     }
 
     // Correccion - Poll: el dueño de cada posición usa el alcance completo y el PC siempre está
     // en RAM (ya no hay parte del programa en memoria virtual)
+    // Correccion - Poll (observación PY1): las 16 posiciones del bloque de cada BCP se marcan como
+    // suyas ("BCP P1"); el valor de cada posición ya dice qué campo es ("PC=82")
     private void actualizarMemoria(){
         mapaMemoria.setGestor(gestor);
         int total = gestor == null ? configuracion.getMemoriaPrincipal() : gestor.getMemoria().getTamanoTotal();
@@ -891,7 +900,11 @@ public class VentanaPrincipal extends JFrame {
             for (int i = b.getDireccionBase(); i < b.getDireccionBase() + b.getTamanioProceso() && i < total; i++) {
                 duenoPosicion[i] = "P" + b.getIdProceso();
             }
-            if (b.getDireccionBCP() >= 0) duenoPosicion[b.getDireccionBCP()] = "BCP P" + b.getIdProceso();
+            if (b.getDireccionBCP() >= 0) {
+                for (int k = 0; k < BCP.TAMANO_BLOQUE && b.getDireccionBCP() + k < total; k++) {
+                    duenoPosicion[b.getDireccionBCP() + k] = "BCP P" + b.getIdProceso();
+                }
+            }
         }
 
         if (modeloMemoria.getRowCount() != total) modeloMemoria.setRowCount(total);
@@ -1179,6 +1192,10 @@ public class VentanaPrincipal extends JFrame {
             l.setFont(c == 1 ? Tema.MONO_NORMAL : (esPC ? Tema.NEGRITA : Tema.NORMAL));
             l.setBorder(new EmptyBorder(0, 8, 0, 8));
             if (c == 0 && esPC) l.setText("▶ " + v);
+            // Correccion - Poll (observación PY1): al pasar el mouse se ve el valor completo de la
+            // posición (los campos del BCP pueden ser más largos que la columna)
+            l.setToolTipText(dueno.isEmpty() ? String.valueOf(t.getModel().getValueAt(r, 1))
+                : dueno + "  ·  " + t.getModel().getValueAt(r, 1));
             return l;
         }
     }
