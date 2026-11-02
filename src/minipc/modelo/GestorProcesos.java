@@ -110,6 +110,7 @@ public class GestorProcesos {
     // R: 1 llamada = 1 segundo de CPU
     // Correccion - Poll: se quita el bloqueo por teclado (INT 09H); la CPU solo queda
     // ociosa si no hay procesos preparados
+    // Correccion - Poll (observación PY1): un error deja el proceso "Finalizado con error"
     public boolean ejecutarUnPaso(){
         if (cpu.getBcpActual() == null) {
             despacharSiguiente();
@@ -128,14 +129,14 @@ public class GestorProcesos {
         } catch (RuntimeException e) {
             // Error del proceso (pila, salto, acceso a memoria...): se termina solo ese proceso
             cpu.imprimir("ERROR P" + actual.getIdProceso() + ": " + e.getMessage());
-            finalizar(actual);
+            finalizar(actual, true);
             despacharSiguiente();
             actualizarBCPsEnMemoria();
             return true;
         }
 
         if (cpu.programaTerminado()) {
-            finalizar(actual);
+            finalizar(actual, false);
         }
 
         if (cpu.getBcpActual() == null) {
@@ -161,10 +162,11 @@ public class GestorProcesos {
     }
 
     // Correccion - Poll: ya no reinicia el peso de la instrucción (cada instrucción dura 1 s)
-    private void finalizar(BCP bcp){
+    // Correccion - Poll (observación PY1): recibe si terminó por un error ("Finalizado con error")
+    private void finalizar(BCP bcp, boolean conError){
         despachador.capturar(bcp);
         bcp.setTiempoFin(reloj);
-        planificador.terminar(bcp);
+        planificador.terminar(bcp, conError);
         cpu.setBcpActual(null);
     }
 

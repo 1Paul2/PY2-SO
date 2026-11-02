@@ -26,6 +26,11 @@ public class BCP {
     // (ya ocurrió su evento pero sigue fuera de memoria) y Finalizado.
     public static final String SUSPENDIDO_ESPERA = "Suspendido en espera";
     public static final String SUSPENDIDO_PREPARADO = "Suspendido preparado";
+    // Correccion - Poll (observación PY1): un proceso que termina por un error (pila, salto,
+    // acceso a memoria) se distingue del que terminó bien con INT 20H o al llegar al final
+    public static final String FINALIZADO = "Finalizado";
+    public static final String FINALIZADO_ERROR = "Finalizado con error";
+
     private int idProceso;
     private String estado;
     private int pcGuardado;
@@ -148,6 +153,15 @@ public class BCP {
 
         public String getEstado(){
             return estado;
+        }
+
+        // Correccion - Poll (observación PY1): "Finalizado" y "Finalizado con error" cuentan los dos
+        // como terminados; antes solo existía "Finalizado"
+        // E: no aplica
+        // S: boolean - true si el proceso ya terminó, bien o con error
+        // R: ninguna
+        public boolean estaFinalizado(){
+            return FINALIZADO.equals(estado) || FINALIZADO_ERROR.equals(estado);
         }
 
         public int getPcGuardado(){

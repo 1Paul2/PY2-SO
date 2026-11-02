@@ -325,10 +325,11 @@ public class VentanaPrincipal extends JFrame {
         return columna(new Component[]{tarjetaCola, recursos, dispositivos}, new double[]{1.0, 0.0, 0.0});
     }
 
+    // Correccion - Poll (observación PY1): la leyenda incluye "Finalizado con error"
     private JPanel crearLeyendaEstados(){
         JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 6));
         p.setOpaque(false);
-        for (String e : new String[]{"Nuevo", "Preparado", "Ejecución", "En espera", "Suspendido en espera", "Suspendido preparado", "Finalizado"}) {
+        for (String e : new String[]{"Nuevo", "Preparado", "Ejecución", "En espera", "Suspendido en espera", "Suspendido preparado", BCP.FINALIZADO, BCP.FINALIZADO_ERROR}) {
             Distintivo d = new Distintivo();
             d.setEstado(e);
             p.add(d);
@@ -729,6 +730,7 @@ public class VentanaPrincipal extends JFrame {
         ((Distintivo) lblReloj).setColores("Tiempo  " + gestor.getReloj() + " s", Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
     }
 
+    // Correccion - Poll (observación PY1): "Finalizado con error" también oculta la base, igual que "Finalizado"
     private void actualizarCola(){
         modeloCola.setRowCount(0);
         if (gestor == null) {
@@ -740,7 +742,7 @@ public class VentanaPrincipal extends JFrame {
                 b.getIdProceso(),
                 b.getArchivosAbiertos().isEmpty() ? "-" : b.getArchivosAbiertos().get(0),
                 b.getEstado(),
-                b.getDireccionBase() >= 0 && !"Finalizado".equals(b.getEstado()) ? b.getDireccionBase() : "-",
+                b.getDireccionBase() >= 0 && !b.estaFinalizado() ? b.getDireccionBase() : "-",
                 b.getTamanioProceso()
             });
         }
@@ -769,7 +771,7 @@ public class VentanaPrincipal extends JFrame {
         int usuarioUsado = 0, bcps = 0;
         for (BCP b : gestor.getTodosLosProcesos()) {
             String e = b.getEstado();
-            if (!"Nuevo".equals(e) && !"Finalizado".equals(e)) {
+            if (!"Nuevo".equals(e) && !b.estaFinalizado()) {
                 usuarioUsado += b.getTamanioProceso();
                 if (b.getDireccionBCP() >= 0) bcps++;
             }
@@ -885,7 +887,7 @@ public class VentanaPrincipal extends JFrame {
         for (int i = 0; i < total; i++) duenoPosicion[i] = i < m.getInicioUsuario() ? "S.O." : "";
         for (BCP b : gestor.getTodosLosProcesos()) {
             String e = b.getEstado();
-            if ("Nuevo".equals(e) || "Finalizado".equals(e) || b.getDireccionBase() < 0) continue;
+            if ("Nuevo".equals(e) || b.estaFinalizado() || b.getDireccionBase() < 0) continue;
             for (int i = b.getDireccionBase(); i < b.getDireccionBase() + b.getTamanioProceso() && i < total; i++) {
                 duenoPosicion[i] = "P" + b.getIdProceso();
             }
@@ -1341,6 +1343,7 @@ public class VentanaPrincipal extends JFrame {
         // E: estado (String) - estado del proceso
         // S: Color[] - {color del texto/borde, color de fondo} para el distintivo del estado
         // R: ninguna
+        // Correccion - Poll (observación PY1): "Finalizado con error" se pinta en rojo
         public static Color[] coloresEstado(String estado){
             if (estado == null) return new Color[]{GRIS, GRIS_CLARO};
             switch (estado) {
@@ -1351,6 +1354,7 @@ public class VentanaPrincipal extends JFrame {
                 case "Suspendido en espera": return new Color[]{MORADO, MORADO_CLARO};
                 case "Suspendido preparado": return new Color[]{new Color(0x9333EA), new Color(0xF3E8FF)};
                 case "Finalizado":return new Color[]{new Color(0x475569), new Color(0xE2E8F0)};
+                case "Finalizado con error":return new Color[]{ROJO, ROJO_CLARO};
                 default:return new Color[]{GRIS, GRIS_CLARO};
             }
         }
@@ -1679,13 +1683,14 @@ public class VentanaPrincipal extends JFrame {
             repaint();
         }
 
+        // Correccion - Poll (observación PY1): "Finalizado con error" tampoco tiene memoria asignada
         // Procesos que tienen memoria asignada en este momento
         private List<BCP> procesosEnMemoria(){
             List<BCP> lista = new ArrayList<>();
             if (gestor == null) return lista;
             for (BCP b : gestor.getTodosLosProcesos()) {
                 String e = b.getEstado();
-                if (!"Nuevo".equals(e) && !"Finalizado".equals(e) && b.getDireccionBase() >= 0) {
+                if (!"Nuevo".equals(e) && !b.estaFinalizado() && b.getDireccionBase() >= 0) {
                     lista.add(b);
                 }
             }

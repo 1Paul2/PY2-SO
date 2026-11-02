@@ -197,11 +197,13 @@ public class Planificador {
         return bcp;
     }
 
-    // E: bcp (BCP) - proceso que terminó
+    // Correccion - Poll (observación PY1): recibe si el proceso terminó por un error, para dejarlo
+    // como "Finalizado con error" en vez de "Finalizado"
+    // E: bcp (BCP) - proceso que terminó; conError (boolean) - true si terminó por un error
     // S: no aplica (void)
     // R: libera su memoria y la posición de su BCP
-    public void terminar(BCP bcp) {
-        bcp.setEstado("Finalizado");
+    public void terminar(BCP bcp, boolean conError) {
+        bcp.setEstado(conError ? BCP.FINALIZADO_ERROR : BCP.FINALIZADO);
         int base = bcp.getDireccionBase();
         liberarMemoria(bcp);
         bcp.setDireccionBase(base);       // se conserva para las estadísticas
