@@ -32,6 +32,7 @@ public class GestorProcesos {
 
     private List<BCP> todosLosProcesos;   // todos los procesos creados, en orden de llegada
     private int reloj;                    // segundos simulados transcurridos
+    private int segundosEnCPU;            // segundos seguidos del proceso actual en la CPU (para el quantum)
     private LocalTime horaArranque;       // hora real en que arrancó el sistema
 
     public static final int MAX_SEGUNDOS_AUTOMATICO = 100000;
@@ -110,6 +111,9 @@ public class GestorProcesos {
     // R: 1 llamada = 1 segundo de CPU
     // Correccion - Poll: se quita el bloqueo por teclado (INT 09H); la CPU solo queda
     // ociosa si no hay procesos preparados
+    // Correccion - Poll (observación PY1): un error deja el proceso "Finalizado con error", y después
+    // de cada segundo se le pregunta al algoritmo de planificación si debe expropiar al proceso
+    // (FCFS nunca lo hace; RR, SRT y los demás lo usarán)
     public boolean ejecutarUnPaso(){
         if (cpu.getBcpActual() == null) {
             despacharSiguiente();
@@ -121,6 +125,7 @@ public class GestorProcesos {
         }
 
         reloj++;
+        segundosEnCPU++;
         actual.setTiempoEmpleado(actual.getTiempoEmpleado() + 1);
 
         try {
@@ -128,14 +133,16 @@ public class GestorProcesos {
         } catch (RuntimeException e) {
             // Error del proceso (pila, salto, acceso a memoria...): se termina solo ese proceso
             cpu.imprimir("ERROR P" + actual.getIdProceso() + ": " + e.getMessage());
-            finalizar(actual);
+            finalizar(actual, true);
             despacharSiguiente();
             actualizarBCPsEnMemoria();
             return true;
         }
 
         if (cpu.programaTerminado()) {
-            finalizar(actual);
+            finalizar(actual, false);
+        } else if (planificador.debeExpropiar(actual, segundosEnCPU)) {
+            expropiar(actual);
         }
 
         if (cpu.getBcpActual() == null) {
@@ -161,19 +168,34 @@ public class GestorProcesos {
     }
 
     // Correccion - Poll: ya no reinicia el peso de la instrucción (cada instrucción dura 1 s)
-    private void finalizar(BCP bcp){
+    // Correccion - Poll (observación PY1): recibe si terminó por un error ("Finalizado con error")
+    private void finalizar(BCP bcp, boolean conError){
         despachador.capturar(bcp);
         bcp.setTiempoFin(reloj);
-        planificador.terminar(bcp);
+        planificador.terminar(bcp, conError);
         cpu.setBcpActual(null);
+    }
+
+    // Correccion - Poll (observación PY1): cambio de contexto por expropiación. Lo pide el algoritmo
+    // de planificación (por ejemplo, al acabarse el quantum en RR): se guardan los registros en el BCP
+    // y el proceso vuelve a la cola de preparados
+    private void expropiar(BCP bcp){
+        despachador.capturar(bcp);
+        planificador.devolverAPreparados(bcp);
+        cpu.setBcpActual(null);
+        cpu.imprimir("[SO] Cambio de contexto: " + planificador.getAlgoritmo().getNombre()
+            + " expropia a P" + bcp.getIdProceso() + " tras " + segundosEnCPU + " s en la CPU");
     }
 
     // Correccion - Poll: el aviso del despachador ya no depende de que haya procesos esperando
     // el teclado; se muestra en cada cambio de contexto
+    // Correccion - Poll (observación PY1): reinicia el contador de segundos en CPU, que usan los
+    // algoritmos expropiativos (quantum)
     private void despacharSiguiente(){
         planificador.prepararSiguientes(0);
         mostrarMensajesSO();
         BCP siguiente = planificador.siguienteProceso();
+        segundosEnCPU = 0;
         if (siguiente != null) {
             if (siguiente.getTiempoInicio() < 0) {
                 siguiente.setTiempoInicio(reloj);
@@ -194,7 +216,8 @@ public class GestorProcesos {
         return cpu.getBcpActual() != null ? 1 : 0;
     }
 
-    // Escribe cada BCP activo en la zona del S.O. de la memoria (una posición por BCP)
+    // Correccion - Poll (observación PY1): cada BCP ocupa un bloque de BCP.TAMANO_BLOQUE posiciones
+    // Escribe cada BCP activo en su bloque de la zona del S.O., un campo por posición
     private void actualizarBCPsEnMemoria(){
         BCP enCpu = cpu.getBcpActual();
         if (enCpu != null) {
@@ -209,9 +232,13 @@ public class GestorProcesos {
         }
     }
 
+    // Correccion - Poll (observación PY1): antes el BCP entero se escribía como un solo texto en una
+    // posición; ahora cada campo (estado, PC, IR, AC, …, Sig) va en su propia posición del bloque
     private void escribirBCP(BCP b){
-        if (b.getDireccionBCP() >= 0) {
-            memoria.escribir(b.getDireccionBCP(), b.aTextoMemoria());
+        if (b.getDireccionBCP() < 0) return;
+        String[] celdas = b.aCeldasMemoria();
+        for (int i = 0; i < celdas.length; i++) {
+            memoria.escribir(b.getDireccionBCP() + i, celdas[i]);
         }
     }
 

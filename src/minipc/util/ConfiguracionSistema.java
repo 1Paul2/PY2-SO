@@ -11,6 +11,7 @@ package minipc.util;
  *
  */
 
+import minipc.modelo.BCP;
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
@@ -21,22 +22,24 @@ import java.util.Properties;
  * ConfiguracionSistema: tamaños de memoria principal, zona del S.O., disco y
  * memoria virtual. Se leen de un archivo de texto (config.txt) para que no
  * queden fijos en el código. Si el archivo no existe, se crea con los valores
- * por defecto del enunciado (256 / 64 / 512 / 64). Los cuatro tamaños se
- * configuran por separado.
+ * por defecto (256 / 80 / 512 / 64). Los cuatro tamaños se configuran por separado.
  *
  * Formato de config.txt:
  *   memoriaPrincipal=256
- *   memoriaSistema=64           
+ *   memoriaSistema=80
  *   almacenamientoSecundario=512
- *   memoriaVirtual=64            
+ *   memoriaVirtual=64
  */
 public class ConfiguracionSistema {
 
     public static final String ARCHIVO_POR_DEFECTO = "config.txt";
 
-    // Valores predeterminados del enunciado
+    // Valores predeterminados: memoria principal 256, disco 512 y memoria virtual 64 son los del
+    // enunciado. La zona del S.O. la define el diseño:
+    // Correccion - Poll (observación PY1): cada BCP ocupa ahora un bloque de BCP.TAMANO_BLOQUE (16)
+    // posiciones, así que la zona del S.O. pasa de 64 a 80 para que quepan los 5 BCP
     public static final int MEMORIA_PRINCIPAL_DEF = 256;
-    public static final int MEMORIA_SISTEMA_DEF = 64;
+    public static final int MEMORIA_SISTEMA_DEF = 5 * BCP.TAMANO_BLOQUE;
     public static final int ALMACENAMIENTO_DEF = 512;
     public static final int MEMORIA_VIRTUAL_DEF = 64;
 
@@ -95,14 +98,18 @@ public class ConfiguracionSistema {
 
     // Correccion - Poll: como la memoria virtual ya no se calcula, se valida que deje espacio en el
     // disco para el índice y los archivos
+    // Correccion - Poll (observación PY1): la zona del S.O. debe alcanzar al menos para un bloque de BCP
+    // (16 posiciones); con menos de 80 caben menos de 5 procesos a la vez
     // E: los cuatro tamaños
     // S: no aplica (void)
     // R: lanza IllegalArgumentException con un mensaje claro si algún valor no es coherente
     public static void validar(int mp, int ms, int as, int mv){
         if (mp < 128 || mp > 4096)
             throw new IllegalArgumentException("La memoria principal debe estar entre 128 y 4096");
-        if (ms < 5 || ms >= mp)
-            throw new IllegalArgumentException("La zona del S.O. debe ser al menos 5 (para los BCP) y menor que la memoria principal");
+        if (ms < BCP.TAMANO_BLOQUE || ms >= mp)
+            throw new IllegalArgumentException("La zona del S.O. debe ser al menos " + BCP.TAMANO_BLOQUE
+                + " (un BCP ocupa " + BCP.TAMANO_BLOQUE + " posiciones; para 5 procesos hacen falta "
+                + (5 * BCP.TAMANO_BLOQUE) + ") y menor que la memoria principal");
         if (as < 128 || as > 8192)
             throw new IllegalArgumentException("El disco debe estar entre 128 y 8192");
         if (mv < 0)

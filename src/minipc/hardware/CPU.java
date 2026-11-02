@@ -1,6 +1,7 @@
 package minipc.hardware;
 
 import minipc.modelo.BCP;
+import minipc.util.ConversorBinario;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -204,7 +205,9 @@ public class CPU {
         escribirRegistro(registro, AC);
     }
 
-    // MOV BX, AX  o  MOV BX, 5
+    // Correccion - Poll (observación PY1): el valor puede venir en hexadecimal ("3CH") porque el
+    // programa ya no lo convierte al cargarse; se convierte aquí, al ejecutar
+    // MOV BX, AX  o  MOV BX, 5  o  MOV AH, 3CH
     // MOV DX, "datos.txt" (nombre de archivo para INT 21H o texto para INT 10H)
     private void ejecutarMOV(String destino, String origen){
         if (origen != null && origen.startsWith("\"") && origen.endsWith("\"") && origen.length() >= 2) {
@@ -214,7 +217,7 @@ public class CPU {
         }
         if ("DX".equals(origen) && "DX".equals(destino)) return;
         String textoDX = "DX".equals(origen) ? DXTexto : null;
-        int valor = esRegistro(origen) ? leerRegistro(origen) : Integer.parseInt(origen);
+        int valor = esRegistro(origen) ? leerRegistro(origen) : ConversorBinario.aEntero(origen);
         escribirRegistro(destino, valor);
         if ("DX".equals(destino) && textoDX != null) DXTexto = textoDX;
     }
@@ -261,6 +264,7 @@ public class CPU {
         escribirRegistro(reg2, temp);
     }
 
+    // Correccion - Poll (observación PY1): los valores pueden venir en hexadecimal; se convierten al ejecutar
     // PARAM v1, v2, v3: mete cada valor en la pila, en orden
     // Se valida antes de meter el primero: si no caben todos, no se mete ninguno
     private void ejecutarPARAM(String[] p){
@@ -271,14 +275,16 @@ public class CPU {
                 + ": PARAM necesita " + cantidad + " espacios y solo quedan " + libres);
         }
         for(int i = 1; i < p.length; i++){
-            bcpActual.push(Integer.parseInt(p[i]));
+            bcpActual.push(ConversorBinario.aEntero(p[i]));
         }
     }
 
+    // Correccion - Poll (observación PY1): el desplazamiento se guarda como se escribió ("+2") y se
+    // convierte aquí
     // JMP/JE/JNE: salta "desplazamiento" instrucciones desde la actual.
     // Valida desbordamiento: el destino debe quedar dentro del proceso.
     private void saltar(String desplazamientoTexto){
-        int desplazamiento = Integer.parseInt(desplazamientoTexto);
+        int desplazamiento = ConversorBinario.aEntero(desplazamientoTexto);
         int actual = PC - 1;                  // fetch ya avanzó el PC
         int destino = actual + desplazamiento;
         int base = bcpActual.getDireccionBase();
