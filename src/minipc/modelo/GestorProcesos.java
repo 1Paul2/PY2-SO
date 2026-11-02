@@ -32,6 +32,7 @@ public class GestorProcesos {
 
     private List<BCP> todosLosProcesos;   // todos los procesos creados, en orden de llegada
     private int reloj;                    // segundos simulados transcurridos
+    private int segundosEnCPU;            // segundos seguidos del proceso actual en la CPU (para el quantum)
     private LocalTime horaArranque;       // hora real en que arrancó el sistema
 
     public static final int MAX_SEGUNDOS_AUTOMATICO = 100000;
@@ -110,7 +111,9 @@ public class GestorProcesos {
     // R: 1 llamada = 1 segundo de CPU
     // Correccion - Poll: se quita el bloqueo por teclado (INT 09H); la CPU solo queda
     // ociosa si no hay procesos preparados
-    // Correccion - Poll (observación PY1): un error deja el proceso "Finalizado con error"
+    // Correccion - Poll (observación PY1): un error deja el proceso "Finalizado con error", y después
+    // de cada segundo se le pregunta al algoritmo de planificación si debe expropiar al proceso
+    // (FCFS nunca lo hace; RR, SRT y los demás lo usarán)
     public boolean ejecutarUnPaso(){
         if (cpu.getBcpActual() == null) {
             despacharSiguiente();
@@ -122,6 +125,7 @@ public class GestorProcesos {
         }
 
         reloj++;
+        segundosEnCPU++;
         actual.setTiempoEmpleado(actual.getTiempoEmpleado() + 1);
 
         try {
@@ -137,6 +141,8 @@ public class GestorProcesos {
 
         if (cpu.programaTerminado()) {
             finalizar(actual, false);
+        } else if (planificador.debeExpropiar(actual, segundosEnCPU)) {
+            expropiar(actual);
         }
 
         if (cpu.getBcpActual() == null) {
@@ -170,12 +176,26 @@ public class GestorProcesos {
         cpu.setBcpActual(null);
     }
 
+    // Correccion - Poll (observación PY1): cambio de contexto por expropiación. Lo pide el algoritmo
+    // de planificación (por ejemplo, al acabarse el quantum en RR): se guardan los registros en el BCP
+    // y el proceso vuelve a la cola de preparados
+    private void expropiar(BCP bcp){
+        despachador.capturar(bcp);
+        planificador.devolverAPreparados(bcp);
+        cpu.setBcpActual(null);
+        cpu.imprimir("[SO] Cambio de contexto: " + planificador.getAlgoritmo().getNombre()
+            + " expropia a P" + bcp.getIdProceso() + " tras " + segundosEnCPU + " s en la CPU");
+    }
+
     // Correccion - Poll: el aviso del despachador ya no depende de que haya procesos esperando
     // el teclado; se muestra en cada cambio de contexto
+    // Correccion - Poll (observación PY1): reinicia el contador de segundos en CPU, que usan los
+    // algoritmos expropiativos (quantum)
     private void despacharSiguiente(){
         planificador.prepararSiguientes(0);
         mostrarMensajesSO();
         BCP siguiente = planificador.siguienteProceso();
+        segundosEnCPU = 0;
         if (siguiente != null) {
             if (siguiente.getTiempoInicio() < 0) {
                 siguiente.setTiempoInicio(reloj);

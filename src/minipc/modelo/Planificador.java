@@ -9,9 +9,18 @@ package minipc.modelo;
 
 import minipc.hardware.Memoria;
 import minipc.hardware.Disco;
+import minipc.modelo.algoritmos.AlgoritmoPlanificacion;
+import minipc.modelo.algoritmos.FCFS;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Planificador: administra las colas de procesos y la memoria que ocupan.
+ *   - Planificador de trabajos (largo plazo): prepararSiguientes() pasa programas de la lista
+ *     de trabajos (en disco) a memoria, hasta MAX_PROCESOS_EN_MEMORIA.
+ *   - Planificador de CPU (corto plazo): siguienteProceso() y debeExpropiar() delegan en el
+ *     AlgoritmoPlanificacion elegido (FCFS por defecto).
+ */
 public class Planificador {
 
     // Colas
@@ -26,6 +35,9 @@ public class Planificador {
     // Bloques de la zona del S.O. donde se guardan los BCP: el bloque i empieza en la
     // posición i * BCP.TAMANO_BLOQUE (true = ocupado)
     private boolean[] slotsBCP;
+
+    // Algoritmo del planificador de CPU (FCFS por defecto)
+    private AlgoritmoPlanificacion algoritmo = new FCFS();
 
     public static final int MAX_PROCESOS_EN_MEMORIA = 5;
 
@@ -62,6 +74,19 @@ public class Planificador {
     // R: ninguna
     public int getCapacidadBCP(){
         return slotsBCP.length;
+    }
+
+    // Correccion - Poll (observación PY1): el algoritmo de CPU se puede cambiar sin tocar el resto
+    public AlgoritmoPlanificacion getAlgoritmo(){
+        return algoritmo;
+    }
+
+    // E: algoritmo (AlgoritmoPlanificacion) - algoritmo del planificador de CPU
+    // S: no aplica (void)
+    // R: no puede ser null
+    public void setAlgoritmo(AlgoritmoPlanificacion algoritmo){
+        if (algoritmo == null) throw new IllegalArgumentException("El algoritmo de planificación no puede ser null");
+        this.algoritmo = algoritmo;
     }
 
     // E: bcp (BCP) - proceso recién creado
@@ -177,11 +202,31 @@ public class Planificador {
         return -1;
     }
 
+    // Correccion - Poll (observación PY1): ya no está escrito FCFS aquí; el algoritmo elegido
+    // decide qué proceso de la cola de preparados entra a la CPU
     // E: no aplica
-    // S: BCP - el primer proceso preparado (FCFS), o null si no hay
+    // S: BCP - el proceso que eligió el algoritmo (ya fuera de la cola), o null si no hay
     // R: ninguna
     public BCP siguienteProceso(){
-        return listaProcesos.desencolar();
+        return algoritmo.seleccionar(listaProcesos);
+    }
+
+    // Correccion - Poll (observación PY1): punto de expropiación para algoritmos como RR o SRT
+    // E: enEjecucion (BCP) - proceso en la CPU; segundosEnCPU (int) - segundos seguidos en la CPU
+    // S: boolean - true si el algoritmo pide sacarlo de la CPU
+    // R: ninguna
+    public boolean debeExpropiar(BCP enEjecucion, int segundosEnCPU){
+        return algoritmo.debeExpropiar(enEjecucion, segundosEnCPU, listaProcesos);
+    }
+
+    // Correccion - Poll (observación PY1): un proceso expropiado vuelve al final de la cola de
+    // preparados sin perder su memoria ni su BCP
+    // E: bcp (BCP) - proceso que salió de la CPU sin terminar
+    // S: no aplica (void)
+    // R: ninguna
+    public void devolverAPreparados(BCP bcp){
+        bcp.setEstado("Preparado");
+        listaProcesos.encolar(bcp);
     }
 
     // E: bcp (BCP) - proceso que pidió entrada de teclado
