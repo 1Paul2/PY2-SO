@@ -347,36 +347,3 @@ CMP DX, CX
 JNE -3         ; vuelve a INC DX mientras DX != 5
 INT 20H
 ```
-
-## Proyecto 2: ráfaga y tiempo de llegada
-
-Rama: `feature/rafaga-tiempo-llegada`.
-
-Después de cargar los archivos se abre una ventana con una llegada por proceso,
-en segundos absolutos desde 0. Se aceptan enteros desde el reloj actual; al
-cancelar se conserva la llegada predeterminada (reloj actual, inicialmente 0).
-La tabla muestra la ráfaga y la llegada. Si se cargan archivos durante una
-simulación, esta se pausa para configurar las nuevas llegadas.
-
-La ráfaga cuenta las líneas físicas del archivo, incluidas las vacías y los
-comentarios. Se mantiene separada del tamaño ejecutable, que el parser calcula
-con las instrucciones válidas, y del tiempo de CPU consumido. Esta funcionalidad
-conserva los pesos de instrucciones existentes.
-
-Los procesos permanecen en estado Nuevo, fuera de las colas del planificador y
-sin ocupar RAM, hasta su llegada. El reloj avanza incluso sin procesos listos.
-En FCFS se admiten por tiempo de llegada; los empates conservan el orden de carga.
-Una llegada no desaloja al proceso que está ejecutándose.
-
-Prueba de regresión (desde la raíz, con Java 26):
-
-```powershell
-New-Item -ItemType Directory -Force build/classes | Out-Null
-$fuentes = @(Get-ChildItem src -Recurse -Filter *.java | ForEach-Object FullName)
-javac -encoding UTF-8 -d build/classes $fuentes tests/PruebaLlegadas.java
-java -cp build/classes PruebaLlegadas
-```
-
-Para verificar la interfaz: cargar dos archivos, asignar llegadas 2 y 5 y avanzar
-con Siguiente. En 1 s no debe haber procesos en RAM; en 2 s debe ingresar el
-primero. Repetir con ejecución automática y llegadas iguales.
