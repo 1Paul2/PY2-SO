@@ -289,11 +289,14 @@ public class VentanaPrincipal extends JFrame {
     private JPanel crearColumnaIzquierda(){
         // Cola de trabajos (lista de trabajos + lista de procesos)
         tarjetaCola = new Tarjeta("Cola de trabajos", Tema.VERDE);
-        modeloCola = new DefaultTableModel(new String[]{"#", "Programa", "Estado", "Base", "Alcance"}, 0) {
+        modeloCola = new DefaultTableModel(new String[]{"#", "Programa", "Estado", "Base", "Alcance", "Ráfaga", "Llegada (s)"}, 0) {
             @Override public boolean isCellEditable(int r, int c){ return false; }
         };
         tablaCola = new JTable(modeloCola);
         Componentes.estilizarTabla(tablaCola);
+        tablaCola.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+        tablaCola.getColumnModel().getColumn(5).setPreferredWidth(65);
+        tablaCola.getColumnModel().getColumn(6).setPreferredWidth(85);
         tablaCola.getColumnModel().getColumn(0).setCellRenderer(new RenderProceso());
         tablaCola.getColumnModel().getColumn(2).setCellRenderer(new RenderEstado());
         tablaCola.getColumnModel().getColumn(0).setPreferredWidth(44);
@@ -588,13 +591,21 @@ public class VentanaPrincipal extends JFrame {
         selector.setFileFilter(new FileNameExtensionFilter("Programas ensamblador (*.asm)", "asm"));
         if (selector.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
 
+        detenerAutomatico(false);
+        timerEspera.stop();
         asegurarGestor();
+        List<BCP> nuevos = new ArrayList<>();
         List<String> errores = new ArrayList<>();
         int cargados = 0;
         for (File archivo : selector.getSelectedFiles()) {
             try {
                 List<Instruccion> instrucciones = ParserASM.leerArchivo(archivo);
-                BCP bcp = gestor.cargarPrograma(instrucciones, archivo.getName());
+                int rafaga;
+                try (java.io.BufferedReader lector = new java.io.BufferedReader(new java.io.FileReader(archivo))) {
+                    rafaga = (int) lector.lines().count();
+                }
+                BCP bcp = gestor.cargarPrograma(instrucciones, archivo.getName(), rafaga, gestor.getReloj());
+                nuevos.add(bcp);
                 gestor.getCpu().imprimir("[SO] " + archivo.getName() + " cargado como P"
                     + bcp.getIdProceso() + " (" + instrucciones.size() + " instrucciones)");
                 cargados++;
@@ -602,7 +613,9 @@ public class VentanaPrincipal extends JFrame {
                 errores.add("• " + e.getMessage());
             }
         }
+        if (!nuevos.isEmpty()) configurarLlegadas(nuevos);
         actualizarVista();
+        if (gestor.bloqueadoPorTeclado()) iniciarEsperaTeclado();
 
         if (!errores.isEmpty()) {
             JTextArea txt = new JTextArea(String.join("\n", errores));
@@ -617,6 +630,37 @@ public class VentanaPrincipal extends JFrame {
             sp.setPreferredSize(new Dimension(560, Math.min(260, 60 + errores.size() * 40)));
             JOptionPane.showMessageDialog(this, sp,
                 cargados + " cargado(s), " + errores.size() + " con errores", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void configurarLlegadas(List<BCP> procesos){
+        JPanel campos = new JPanel(new GridLayout(0, 3, 12, 8));
+        campos.add(new JLabel("Proceso / archivo"));
+        campos.add(new JLabel("Ráfaga (líneas)"));
+        campos.add(new JLabel("Llegada (segundos desde 0)"));
+        List<JSpinner> entradas = new ArrayList<>();
+        for (BCP b : procesos) {
+            campos.add(new JLabel("P" + b.getIdProceso() + " - " + b.getArchivosAbiertos().get(0)));
+            campos.add(new JLabel(String.valueOf(b.getRafaga())));
+            JSpinner entrada = new JSpinner(new SpinnerNumberModel(b.getTiempoLlegada(), gestor.getReloj(), Integer.MAX_VALUE, 1));
+            entradas.add(entrada);
+            campos.add(entrada);
+        }
+        JScrollPane scroll = new JScrollPane(campos);
+        scroll.setPreferredSize(new Dimension(660, Math.min(380, 65 + procesos.size() * 35)));
+        while (true) {
+            int opcion = JOptionPane.showConfirmDialog(this, scroll,
+                "Tiempos de llegada · reloj actual: " + gestor.getReloj() + " s",
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+            if (opcion != JOptionPane.OK_OPTION) return; // Conserva las llegadas por defecto.
+            try {
+                for (JSpinner entrada : entradas) entrada.commitEdit();
+                for (int i = 0; i < procesos.size(); i++)
+                    gestor.configurarLlegada(procesos.get(i), ((Number) entradas.get(i).getValue()).intValue());
+                return;
+            } catch (java.text.ParseException | IllegalArgumentException ex) {
+                avisar("Ingresá segundos enteros mayores o iguales al reloj actual.");
+            }
         }
     }
 
@@ -817,7 +861,9 @@ public class VentanaPrincipal extends JFrame {
                 b.getArchivosAbiertos().isEmpty() ? "-" : b.getArchivosAbiertos().get(0),
                 b.getEstado(),
                 b.getDireccionBase() >= 0 && !"Finalizado".equals(b.getEstado()) ? b.getDireccionBase() : "-",
-                b.getTamanioProceso()
+                b.getTamanioProceso(),
+                b.getRafaga(),
+                b.getTiempoLlegada()
             });
         }
         int trabajos = gestor.getPlanificador().getListaTrabajos().tamanio();

@@ -47,6 +47,8 @@ public class BCP {
     private int prioridad;
     private boolean flagGuardado;
     private int tiempoFin;
+    private int rafaga;
+    private int tiempoLlegada;
     private int direccionBCP;
     private int enRAM;            // instrucciones cargadas en memoria principal
     private int baseVirtual;      // dirección del disco donde está el resto (-1 si todo cabe en RAM)
@@ -277,6 +279,17 @@ public class BCP {
         }
         
 
+        public int getRafaga(){ return rafaga; }
+        public void setRafaga(int valor){
+            if (valor < 0) throw new IllegalArgumentException("Ráfaga negativa");
+            rafaga = valor;
+        }
+        public int getTiempoLlegada(){ return tiempoLlegada; }
+        public void setTiempoLlegada(int valor){
+            if (valor < 0) throw new IllegalArgumentException("Llegada negativa");
+            tiempoLlegada = valor;
+        }
+
         public int getTiempoFin(){ return tiempoFin; }
         public void setTiempoFin(int t){ this.tiempoFin = t; }
 
@@ -310,6 +323,7 @@ public class BCP {
                 + "|IR=" + irGuardado + "|Pila=" + pilaTexto()
                 + "|Base=" + direccionBase + "|Alcance=" + tamanioProceso
                 + "|RAM=" + enRAM + "|Virtual=" + (usaMemoriaVirtual() ? baseVirtual + "+" + getEnVirtual() : "no")
+                + "|Rafaga=" + rafaga + "|Llegada=" + tiempoLlegada
                 + "|Sig=" + sig;
         }
 

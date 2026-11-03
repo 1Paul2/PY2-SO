@@ -31,6 +31,7 @@ public class GestorProcesos {
     private int siguienteIdProceso;
 
     private List<BCP> todosLosProcesos;   // todos los procesos creados, en orden de llegada
+    private final List<BCP> pendientesLlegada = new ArrayList<>();
     private int reloj;                    // segundos simulados transcurridos
     private LocalTime horaArranque;       // hora real en que arrancó el sistema
 
@@ -63,6 +64,13 @@ public class GestorProcesos {
     // S: BCP - el proceso creado
     // R: lanza RuntimeException si el programa no cabe en memoria o no hay espacio en disco
     public BCP cargarPrograma(List<Instruccion> instrucciones, String nombreArchivo){
+        return cargarPrograma(instrucciones, nombreArchivo, instrucciones.size(), reloj);
+    }
+
+    public BCP cargarPrograma(List<Instruccion> instrucciones, String nombreArchivo,
+                             int rafaga, int llegada){
+        if (llegada < reloj) throw new IllegalArgumentException("La llegada no puede ser anterior al reloj actual (" + reloj + ")");
+        if (rafaga < instrucciones.size()) throw new IllegalArgumentException("La ráfaga no puede ser menor que las instrucciones");
         int espacioUsuario = memoria.getTamanoTotal() - memoria.getInicioUsuario();
         int espacioVirtual = disco.getTamanoMemoriaVirtual();
         if (instrucciones.size() > espacioUsuario + espacioVirtual) {
@@ -91,16 +99,35 @@ public class GestorProcesos {
 
         BCP bcp = new BCP(siguienteIdProceso, "Nuevo");
         bcp.setTamanioProceso(instrucciones.size());
+        bcp.setRafaga(rafaga);
+        bcp.setTiempoLlegada(llegada);
         bcp.agregarArchivoAbierto(nombreArchivo);
         bcp.setPrioridad(siguienteIdProceso);       // FCFS: prioridad = orden de llegada
         siguienteIdProceso++;
 
         todosLosProcesos.add(bcp);
-        planificador.admitirBCP(bcp);
+        pendientesLlegada.add(bcp);
+        return bcp;
+    }
+
+    public void configurarLlegada(BCP bcp, int llegada){
+        if (!pendientesLlegada.contains(bcp)) throw new IllegalStateException("El proceso ya llegó");
+        if (llegada < reloj) throw new IllegalArgumentException("La llegada debe ser al menos " + reloj);
+        bcp.setTiempoLlegada(llegada);
+    }
+
+    private void admitirLlegadas(){
+        // Orden estable: empates por orden de carga, FCFS por llegada real.
+        pendientesLlegada.sort(java.util.Comparator.comparingInt(BCP::getTiempoLlegada));
+        java.util.Iterator<BCP> it = pendientesLlegada.iterator();
+        while (it.hasNext()) {
+            BCP b = it.next();
+            if (b.getTiempoLlegada() > reloj) break;
+            planificador.admitirBCP(b);
+            it.remove();
+        }
         planificador.prepararSiguientes(enEjecucion());
         mostrarMensajesSO();
-        actualizarBCPsEnMemoria();
-        return bcp;
     }
 
     // ===================== Ejecución =====================
@@ -109,16 +136,18 @@ public class GestorProcesos {
     // S: boolean - true si se ejecutó un segundo de CPU; false si no había nada que ejecutar
     // R: 1 llamada = 1 segundo de CPU
     public boolean ejecutarUnPaso(){
+        admitirLlegadas();
         if (cpu.getBcpActual() == null) {
             despacharSiguiente();
         }
 
         BCP actual = cpu.getBcpActual();
         if (actual == null) {
-            if (esperandoTeclado()) {
-                // CPU ociosa: todos los procesos que quedan están bloqueados esperando el
-                // teclado. El reloj sigue corriendo, pero ningún proceso gasta tiempo de CPU.
+            if (esperandoTeclado() || !pendientesLlegada.isEmpty()) {
+                // CPU ociosa por teclado o futuras llegadas: avanza el reloj sin gastar CPU.
                 reloj++;
+                admitirLlegadas();
+                if (cpu.getBcpActual() == null) despacharSiguiente();
                 actualizarBCPsEnMemoria();
                 return true;
             }
@@ -145,6 +174,7 @@ public class GestorProcesos {
             finalizar(actual);
         }
 
+        admitirLlegadas();
         if (cpu.getBcpActual() == null) {
             despacharSiguiente();
         }
@@ -212,6 +242,7 @@ public class GestorProcesos {
     }
 
     private void despacharSiguiente(){
+        admitirLlegadas();
         planificador.prepararSiguientes(0);
         mostrarMensajesSO();
         BCP siguiente = planificador.siguienteProceso();
@@ -221,7 +252,7 @@ public class GestorProcesos {
             }
             siguiente.setCpuId(1);
             despachador.despachar(siguiente);
-            if (esperandoTeclado()) {
+            if (esperandoTeclado() || !pendientesLlegada.isEmpty()) {
                 cpu.imprimir("[SO] Despachador: P" + siguiente.getIdProceso() + " entra a la CPU");
             }
         }
@@ -261,7 +292,7 @@ public class GestorProcesos {
     // ===================== Consultas para la GUI =====================
 
     public boolean hayProcesos(){
-        return cpu.getBcpActual() != null
+        return !pendientesLlegada.isEmpty() || cpu.getBcpActual() != null
             || !planificador.getListaTrabajos().estaVacia()
             || !planificador.getListaProcesos().estaVacia()
             || !planificador.getListaEspera().estaVacia();
@@ -279,7 +310,7 @@ public class GestorProcesos {
     // Solo quedan procesos bloqueados por teclado: la CPU está ociosa y no hay preparados
     public boolean bloqueadoPorTeclado(){
         return esperandoTeclado() && cpu.getBcpActual() == null
-            && planificador.getListaProcesos().estaVacia();
+            && planificador.getListaProcesos().estaVacia() && pendientesLlegada.isEmpty();
     }
 
     public List<BCP> getTodosLosProcesos(){
