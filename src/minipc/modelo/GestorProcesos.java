@@ -33,6 +33,7 @@ public class GestorProcesos {
     private List<BCP> todosLosProcesos;   // todos los procesos creados, en orden de llegada
     private final List<BCP> pendientesLlegada = new ArrayList<>();
     private int reloj;                    // segundos simulados transcurridos
+    private int segundosEnCPU;            // segundos seguidos del proceso actual en la CPU (para el quantum)
     private LocalTime horaArranque;       // hora real en que arrancó el sistema
 
     public static final int MAX_SEGUNDOS_AUTOMATICO = 100000;
@@ -60,6 +61,8 @@ public class GestorProcesos {
 
     // ===================== Carga de programas =====================
 
+    // Correccion - Poll: el límite ya no suma la memoria virtual; el programa debe caber en la
+    // memoria de usuario (la memoria virtual se rehace con paginación)
     // E: instrucciones (List<Instruccion>) - programa ya validado; nombreArchivo (String)
     // S: BCP - el proceso creado
     // R: lanza RuntimeException si el programa no cabe en memoria o no hay espacio en disco
@@ -72,12 +75,10 @@ public class GestorProcesos {
         if (llegada < reloj) throw new IllegalArgumentException("La llegada no puede ser anterior al reloj actual (" + reloj + ")");
         if (rafaga < instrucciones.size()) throw new IllegalArgumentException("La ráfaga no puede ser menor que las instrucciones");
         int espacioUsuario = memoria.getTamanoTotal() - memoria.getInicioUsuario();
-        int espacioVirtual = disco.getTamanoMemoriaVirtual();
-        if (instrucciones.size() > espacioUsuario + espacioVirtual) {
-            // Desbordamiento de memoria: ni la RAM de usuario más la memoria virtual alcanzan
+        if (instrucciones.size() > espacioUsuario) {
+            // Desbordamiento de memoria: el programa es más grande que toda la memoria de usuario
             throw new RuntimeException("Desbordamiento de memoria: " + nombreArchivo + " ocupa "
-                + instrucciones.size() + " posiciones y el máximo es " + (espacioUsuario + espacioVirtual)
-                + " (" + espacioUsuario + " de memoria de usuario + " + espacioVirtual + " de memoria virtual)");
+                + instrucciones.size() + " posiciones y la memoria de usuario tiene " + espacioUsuario);
         }
 
         List<String> lineas = new ArrayList<>();
@@ -135,6 +136,11 @@ public class GestorProcesos {
     // E: no aplica
     // S: boolean - true si se ejecutó un segundo de CPU; false si no había nada que ejecutar
     // R: 1 llamada = 1 segundo de CPU
+    // Correccion - Poll: se quita el bloqueo por teclado (INT 09H); la CPU solo queda
+    // ociosa si no hay procesos preparados
+    // Correccion - Poll (observación PY1): un error deja el proceso "Finalizado con error", y después
+    // de cada segundo se le pregunta al algoritmo de planificación si debe expropiar al proceso
+    // (FCFS nunca lo hace; RR, SRT y los demás lo usarán)
     public boolean ejecutarUnPaso(){
         admitirLlegadas();
         if (cpu.getBcpActual() == null) {
@@ -155,6 +161,7 @@ public class GestorProcesos {
         }
 
         reloj++;
+        segundosEnCPU++;
         actual.setTiempoEmpleado(actual.getTiempoEmpleado() + 1);
 
         try {
@@ -162,16 +169,16 @@ public class GestorProcesos {
         } catch (RuntimeException e) {
             // Error del proceso (pila, salto, acceso a memoria...): se termina solo ese proceso
             cpu.imprimir("ERROR P" + actual.getIdProceso() + ": " + e.getMessage());
-            finalizar(actual);
+            finalizar(actual, true);
             despacharSiguiente();
             actualizarBCPsEnMemoria();
             return true;
         }
 
-        if (cpu.consumirSolicitudTeclado()) {
-            bloquearPorTeclado(actual);
-        } else if (cpu.programaTerminado()) {
-            finalizar(actual);
+        if (cpu.programaTerminado()) {
+            finalizar(actual, false);
+        } else if (planificador.debeExpropiar(actual, segundosEnCPU)) {
+            expropiar(actual);
         }
 
         admitirLlegadas();
@@ -182,13 +189,13 @@ public class GestorProcesos {
         return true;
     }
 
+    // Correccion - Poll: ya no se detiene esperando el teclado (INT 09H se quitó)
     // E: no aplica
     // S: no aplica (void)
-    // R: se detiene si todos los procesos restantes esperan teclado, o tras MAX_SEGUNDOS_AUTOMATICO
+    // R: se detiene cuando no queda nada que ejecutar, o tras MAX_SEGUNDOS_AUTOMATICO
     public void ejecutarTodo(){
         int segundos = 0;
         while (hayProcesos() && segundos < MAX_SEGUNDOS_AUTOMATICO) {
-            if (bloqueadoPorTeclado()) break;   // se detiene hasta que el usuario ingrese el valor
             if (!ejecutarUnPaso()) break;
             segundos++;
         }
@@ -197,55 +204,36 @@ public class GestorProcesos {
         }
     }
 
-    // E: valor (int) - número ingresado por el usuario
-    // S: no aplica (void)
-    // R: valor entre 0 y 255; debe haber un proceso en espera. El valor lo recibe el
-    //    primero de la lista de espera (FCFS)
-    public void ingresarTeclado(int valor){
-        if (valor < 0 || valor > 255) {
-            throw new IllegalArgumentException("Solo se aceptan números entre 0 y 255");
-        }
-        BCP bcp = getProcesoEsperandoTeclado();
-        if (bcp == null) {
-            throw new IllegalStateException("Ningún proceso está esperando entrada de teclado");
-        }
-        // INT 09H guarda el valor en DX: el proceso no está en la CPU, así que se escribe
-        // en su BCP y lo recibe al volver a ser despachado
-        bcp.setDxGuardado(valor);
-        bcp.setDxTextoGuardado(null);
-        cpu.imprimir(String.valueOf(valor));
-        planificador.salirDeEspera();       // En espera -> Preparado, o Suspendido en espera -> Suspendido preparado
-        cpu.imprimir("[SO] P" + bcp.getIdProceso() + " recibió el valor del teclado: pasa a " + bcp.getEstado());
-        planificador.prepararSiguientes(enEjecucion());
-        mostrarMensajesSO();
-        actualizarBCPsEnMemoria();
-    }
-
-    // INT 09H: el proceso sale de la CPU (cambio de contexto) y queda bloqueado en la
-    // lista de espera hasta que se ingrese el valor. El despachador mete al siguiente.
-    private void bloquearPorTeclado(BCP bcp){
-        despachador.capturar(bcp);          // el PC ya apunta a la instrucción siguiente al INT 09H
-        planificador.enEspera(bcp);
-        cpu.setBcpActual(null);
-        cpu.reiniciarInstruccion();
-        escribirBCP(bcp);
-        cpu.imprimir("[SO] Cambio de contexto: P" + bcp.getIdProceso() + " sale de la CPU (En espera de teclado)");
-        cpu.imprimir(">> P" + bcp.getIdProceso() + " - Ingresar valor (0-255):");
-    }
-
-    private void finalizar(BCP bcp){
+    // Correccion - Poll: ya no reinicia el peso de la instrucción (cada instrucción dura 1 s)
+    // Correccion - Poll (observación PY1): recibe si terminó por un error ("Finalizado con error")
+    private void finalizar(BCP bcp, boolean conError){
         despachador.capturar(bcp);
         bcp.setTiempoFin(reloj);
-        planificador.terminar(bcp);
+        planificador.terminar(bcp, conError);
         cpu.setBcpActual(null);
-        cpu.reiniciarInstruccion();
     }
 
+    // Correccion - Poll (observación PY1): cambio de contexto por expropiación. Lo pide el algoritmo
+    // de planificación (por ejemplo, al acabarse el quantum en RR): se guardan los registros en el BCP
+    // y el proceso vuelve a la cola de preparados
+    private void expropiar(BCP bcp){
+        despachador.capturar(bcp);
+        planificador.devolverAPreparados(bcp);
+        cpu.setBcpActual(null);
+        cpu.imprimir("[SO] Cambio de contexto: " + planificador.getAlgoritmo().getNombre()
+            + " expropia a P" + bcp.getIdProceso() + " tras " + segundosEnCPU + " s en la CPU");
+    }
+
+    // Correccion - Poll: el aviso del despachador ya no depende de que haya procesos esperando
+    // el teclado; se muestra en cada cambio de contexto
+    // Correccion - Poll (observación PY1): reinicia el contador de segundos en CPU, que usan los
+    // algoritmos expropiativos (quantum)
     private void despacharSiguiente(){
         admitirLlegadas();
         planificador.prepararSiguientes(0);
         mostrarMensajesSO();
         BCP siguiente = planificador.siguienteProceso();
+        segundosEnCPU = 0;
         if (siguiente != null) {
             if (siguiente.getTiempoInicio() < 0) {
                 siguiente.setTiempoInicio(reloj);
@@ -268,7 +256,8 @@ public class GestorProcesos {
         return cpu.getBcpActual() != null ? 1 : 0;
     }
 
-    // Escribe cada BCP activo en la zona del S.O. de la memoria (una posición por BCP)
+    // Correccion - Poll (observación PY1): cada BCP ocupa un bloque de BCP.TAMANO_BLOQUE posiciones
+    // Escribe cada BCP activo en su bloque de la zona del S.O., un campo por posición
     private void actualizarBCPsEnMemoria(){
         BCP enCpu = cpu.getBcpActual();
         if (enCpu != null) {
@@ -283,9 +272,13 @@ public class GestorProcesos {
         }
     }
 
+    // Correccion - Poll (observación PY1): antes el BCP entero se escribía como un solo texto en una
+    // posición; ahora cada campo (estado, PC, IR, AC, …, Sig) va en su propia posición del bloque
     private void escribirBCP(BCP b){
-        if (b.getDireccionBCP() >= 0) {
-            memoria.escribir(b.getDireccionBCP(), b.aTextoMemoria());
+        if (b.getDireccionBCP() < 0) return;
+        String[] celdas = b.aCeldasMemoria();
+        for (int i = 0; i < celdas.length; i++) {
+            memoria.escribir(b.getDireccionBCP() + i, celdas[i]);
         }
     }
 
@@ -323,10 +316,8 @@ public class GestorProcesos {
 
     public int getReloj(){ return reloj; }
 
-    public String getHoraSimulada(){
-        return horaArranque.plusSeconds(reloj).format(FORMATO_HORA);
-    }
-
+    // Correccion - Poll: se quitó getHoraSimulada(); horaDe() queda solo porque la usan las
+    // estadísticas, que por ahora se mantienen como en el proyecto 1
     // E: segundos (int) - segundos simulados desde el arranque
     // S: String - hora "HH:mm:ss" correspondiente
     // R: ninguna

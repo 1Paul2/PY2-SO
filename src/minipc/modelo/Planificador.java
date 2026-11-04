@@ -9,9 +9,18 @@ package minipc.modelo;
 
 import minipc.hardware.Memoria;
 import minipc.hardware.Disco;
+import minipc.modelo.algoritmos.AlgoritmoPlanificacion;
+import minipc.modelo.algoritmos.FCFS;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Planificador: administra las colas de procesos y la memoria que ocupan.
+ *   - Planificador de trabajos (largo plazo): prepararSiguientes() pasa programas de la lista
+ *     de trabajos (en disco) a memoria, hasta MAX_PROCESOS_EN_MEMORIA.
+ *   - Planificador de CPU (corto plazo): siguienteProceso() y debeExpropiar() delegan en el
+ *     AlgoritmoPlanificacion elegido (FCFS por defecto).
+ */
 public class Planificador {
 
     // Colas
@@ -23,8 +32,12 @@ public class Planificador {
     private Memoria memoria;
     private Disco disco;
 
-    // Posiciones de la zona del S.O. donde se guardan los BCP (una por BCP)
+    // Bloques de la zona del S.O. donde se guardan los BCP: el bloque i empieza en la
+    // posición i * BCP.TAMANO_BLOQUE (true = ocupado)
     private boolean[] slotsBCP;
+
+    // Algoritmo del planificador de CPU (FCFS por defecto)
+    private AlgoritmoPlanificacion algoritmo = new FCFS();
 
     public static final int MAX_PROCESOS_EN_MEMORIA = 5;
 
@@ -40,9 +53,11 @@ public class Planificador {
         return copia;
     }
 
+    // Correccion - Poll (observación PY1): cada BCP ocupa un bloque de BCP.TAMANO_BLOQUE posiciones
+    // (antes 1 sola), así que la cantidad de BCP que caben es zona del S.O. / TAMANO_BLOQUE
     // E: memoria (Memoria), disco (Disco)
     // S: no aplica (constructor)
-    // R: la zona del S.O. debe tener al menos 1 posición para guardar BCPs
+    // R: la zona del S.O. debe tener al menos BCP.TAMANO_BLOQUE posiciones para guardar un BCP
     public Planificador(Memoria memoria, Disco disco) {
         this.listaTrabajos = new ColaTrabajo();
         this.listaProcesos = new ColaTrabajo();
@@ -50,8 +65,28 @@ public class Planificador {
         this.listaFinalizados = new ColaTrabajo();
         this.memoria = memoria;
         this.disco = disco;
-        int slots = Math.min(MAX_PROCESOS_EN_MEMORIA, memoria.getInicioUsuario());
+        int slots = Math.min(MAX_PROCESOS_EN_MEMORIA, memoria.getInicioUsuario() / BCP.TAMANO_BLOQUE);
         this.slotsBCP = new boolean[slots];
+    }
+
+    // E: no aplica
+    // S: int - cuántos BCP caben en la zona del S.O. (como máximo MAX_PROCESOS_EN_MEMORIA)
+    // R: ninguna
+    public int getCapacidadBCP(){
+        return slotsBCP.length;
+    }
+
+    // Correccion - Poll (observación PY1): el algoritmo de CPU se puede cambiar sin tocar el resto
+    public AlgoritmoPlanificacion getAlgoritmo(){
+        return algoritmo;
+    }
+
+    // E: algoritmo (AlgoritmoPlanificacion) - algoritmo del planificador de CPU
+    // S: no aplica (void)
+    // R: no puede ser null
+    public void setAlgoritmo(AlgoritmoPlanificacion algoritmo){
+        if (algoritmo == null) throw new IllegalArgumentException("El algoritmo de planificación no puede ser null");
+        this.algoritmo = algoritmo;
     }
 
     // E: bcp (BCP) - proceso recién creado
@@ -77,42 +112,25 @@ public class Planificador {
         }
     }
 
+    // Correccion - Poll: se quita el reparto "mitad en RAM, mitad en memoria virtual"; si el
+    // programa no cabe completo en un hueco de RAM, espera en la lista de trabajos
     // E: bcp (BCP) - primer trabajo de la lista de trabajos
     // S: boolean - true si se pudo cargar en memoria (y pasó a la lista de procesos)
-    // R: si no cabe completo en RAM, la parte que sobra va a la memoria virtual
+    // R: el programa debe caber completo en un hueco contiguo de la zona de usuario
+    // Correccion - Poll (observación PY1): el BCP recibe la dirección donde empieza su bloque
+    // (bloque * BCP.TAMANO_BLOQUE), no un índice de una sola posición
     private boolean intentarCargar(BCP bcp){
         int slot = slotLibre();
         if (slot == -1) return false;                        // no hay espacio para su BCP
 
         int tamano = bcp.getTamanioProceso();
-        List<String> lineas = disco.leerArchivo(bcp.getArchivosAbiertos().get(0));
-
         int hueco = memoria.encontrarHueco(tamano);
-        int enRAM = tamano;
-        int baseVirtual = -1;
+        if (hueco == -1) return false;                       // no cabe: espera a que se libere memoria
 
-        if (hueco == -1) {
-            // No cabe completo: se carga en RAM lo que quepa en el hueco más grande
-            // y el resto se manda a la memoria virtual del disco
-            int[] mayor = memoria.huecoMasGrande();
-            if (mayor[0] == -1) return false;                // RAM llena
-            enRAM = Math.min(mayor[1], tamano);
-            baseVirtual = disco.buscarEspacioVirtual(tamano - enRAM);
-            if (baseVirtual == -1) return false;             // memoria virtual llena
-            hueco = mayor[0];
-            disco.escribirVirtual(baseVirtual, lineas.subList(enRAM, tamano));
-            mensajes.add("[SO] P" + bcp.getIdProceso() + " no cabe completo en RAM: "
-                + enRAM + " instrucciones en memoria [" + hueco + "-" + (hueco + enRAM - 1) + "] y "
-                + (tamano - enRAM) + " en memoria virtual (disco [" + baseVirtual + "-"
-                + (baseVirtual + tamano - enRAM - 1) + "])");
-        }
-
-        // Cargar en memoria principal la parte que cabe
-        for (int i = 0; i < enRAM; i++) {
+        List<String> lineas = disco.leerArchivo(bcp.getArchivosAbiertos().get(0));
+        for (int i = 0; i < tamano; i++) {
             memoria.escribir(hueco + i, lineas.get(i));
         }
-        bcp.setEnRAM(enRAM);
-        bcp.setBaseVirtual(baseVirtual);
         bcp.setDireccionBase(hueco);
 
         if (bcp.getDesplazamientoPC() >= 0) {
@@ -125,7 +143,7 @@ public class Planificador {
         }
 
         slotsBCP[slot] = true;
-        bcp.setDireccionBCP(slot);
+        bcp.setDireccionBCP(slot * BCP.TAMANO_BLOQUE);
         bcp.setEstado("Preparado");
 
         listaTrabajos.desencolar();
@@ -151,22 +169,19 @@ public class Planificador {
         return false;
     }
 
-    // Libera la RAM, la memoria virtual y la posición del BCP de un proceso
+    // Correccion - Poll: ya no libera memoria virtual; el programa ocupa solo RAM (base + alcance)
+    // Correccion - Poll (observación PY1): libera el bloque completo del BCP (TAMANO_BLOQUE posiciones)
+    // Libera la RAM y el bloque del BCP de un proceso
     private void liberarMemoria(BCP bcp){
         if (bcp.getDireccionBase() >= 0) {
-            memoria.liberar(bcp.getDireccionBase(), bcp.getEnRAM());
-        }
-        if (bcp.usaMemoriaVirtual()) {
-            disco.liberarVirtual(bcp.getBaseVirtual(), bcp.getEnVirtual());
+            memoria.liberar(bcp.getDireccionBase(), bcp.getTamanioProceso());
         }
         if (bcp.getDireccionBCP() >= 0) {
-            memoria.liberar(bcp.getDireccionBCP(), 1);
-            slotsBCP[bcp.getDireccionBCP()] = false;
+            memoria.liberar(bcp.getDireccionBCP(), BCP.TAMANO_BLOQUE);
+            slotsBCP[bcp.getDireccionBCP() / BCP.TAMANO_BLOQUE] = false;
             bcp.setDireccionBCP(-1);
         }
         bcp.setDireccionBase(-1);
-        bcp.setEnRAM(0);
-        bcp.setBaseVirtual(-1);
     }
 
     // E: enEjecucion (int) - 1 si hay un proceso en la CPU
@@ -187,11 +202,31 @@ public class Planificador {
         return -1;
     }
 
+    // Correccion - Poll (observación PY1): ya no está escrito FCFS aquí; el algoritmo elegido
+    // decide qué proceso de la cola de preparados entra a la CPU
     // E: no aplica
-    // S: BCP - el primer proceso preparado (FCFS), o null si no hay
+    // S: BCP - el proceso que eligió el algoritmo (ya fuera de la cola), o null si no hay
     // R: ninguna
     public BCP siguienteProceso(){
-        return listaProcesos.desencolar();
+        return algoritmo.seleccionar(listaProcesos);
+    }
+
+    // Correccion - Poll (observación PY1): punto de expropiación para algoritmos como RR o SRT
+    // E: enEjecucion (BCP) - proceso en la CPU; segundosEnCPU (int) - segundos seguidos en la CPU
+    // S: boolean - true si el algoritmo pide sacarlo de la CPU
+    // R: ninguna
+    public boolean debeExpropiar(BCP enEjecucion, int segundosEnCPU){
+        return algoritmo.debeExpropiar(enEjecucion, segundosEnCPU, listaProcesos);
+    }
+
+    // Correccion - Poll (observación PY1): un proceso expropiado vuelve al final de la cola de
+    // preparados sin perder su memoria ni su BCP
+    // E: bcp (BCP) - proceso que salió de la CPU sin terminar
+    // S: no aplica (void)
+    // R: ninguna
+    public void devolverAPreparados(BCP bcp){
+        bcp.setEstado("Preparado");
+        listaProcesos.encolar(bcp);
     }
 
     // E: bcp (BCP) - proceso que pidió entrada de teclado
@@ -220,11 +255,13 @@ public class Planificador {
         return bcp;
     }
 
-    // E: bcp (BCP) - proceso que terminó
+    // Correccion - Poll (observación PY1): recibe si el proceso terminó por un error, para dejarlo
+    // como "Finalizado con error" en vez de "Finalizado"
+    // E: bcp (BCP) - proceso que terminó; conError (boolean) - true si terminó por un error
     // S: no aplica (void)
-    // R: libera su memoria y la posición de su BCP
-    public void terminar(BCP bcp) {
-        bcp.setEstado("Finalizado");
+    // R: libera su memoria y el bloque de su BCP
+    public void terminar(BCP bcp, boolean conError) {
+        bcp.setEstado(conError ? BCP.FINALIZADO_ERROR : BCP.FINALIZADO);
         int base = bcp.getDireccionBase();
         liberarMemoria(bcp);
         bcp.setDireccionBase(base);       // se conserva para las estadísticas

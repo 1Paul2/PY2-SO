@@ -6,7 +6,15 @@ package minipc.modelo;
 
 /**
  *
- * @author PC
+ * @author Poll Anthony Garro Vargas - 2024129001
+ * @Universidad: Instituto Tecnológico de Costa Rica
+ *
+ */
+
+/**
+ * ColaTrabajo: lista enlazada de BCP. Cada BCP apunta al siguiente con getSiguiente(), así que
+ * la cola es el mismo enlace "siguiente BCP" que se guarda en la memoria del S.O. Se usa para la
+ * lista de trabajos, la de preparados, la de espera y la de finalizados.
  */
 public class ColaTrabajo {
     //Atributos de ColaTrabajo
@@ -59,6 +67,33 @@ public class ColaTrabajo {
 
     public BCP getUltimo() {
         return ultimo;
+    }
+
+    // Correccion - Poll (observación PY1): para algoritmos que no eligen al primero de la cola
+    // (SPN, HRRN, prioridad, …) hace falta recorrerla y sacar un proceso de cualquier posición
+    // E: no aplica
+    // S: List<BCP> - los procesos de la cola, del primero al último (copia; la cola no cambia)
+    // R: ninguna
+    public java.util.List<BCP> aLista() {
+        java.util.List<BCP> lista = new java.util.ArrayList<>();
+        for (BCP b = primero; b != null; b = b.getSiguiente()) lista.add(b);
+        return lista;
+    }
+
+    // E: bcp (BCP) - proceso a sacar de la cola
+    // S: boolean - true si estaba en la cola y se sacó
+    // R: ninguna
+    public boolean quitar(BCP bcp) {
+        BCP anterior = null;
+        for (BCP b = primero; b != null; anterior = b, b = b.getSiguiente()) {
+            if (b != bcp) continue;
+            if (anterior == null) primero = b.getSiguiente();
+            else anterior.setSiguiente(b.getSiguiente());
+            if (ultimo == b) ultimo = anterior;
+            b.setSiguiente(null);
+            return true;
+        }
+        return false;
     }
 
     public int tamanio() {

@@ -19,6 +19,19 @@ public class ConversorBinario {
             || reg.equals("AL");    
     }
 
+    // Correccion - Poll: conversión única de un operando numérico (decimal o hexadecimal con H),
+    // para que el programa guarde el valor tal como se escribió ("3CH") y solo se convierta al ejecutar
+    // E: texto (String) - número decimal ("5", "-2", "+3") o hexadecimal terminado en H ("3CH", "0FH")
+    // S: int - el valor numérico
+    // R: lanza NumberFormatException si el texto no es un número válido
+    public static int aEntero(String texto){
+        String t = texto.trim().toUpperCase();
+        if (t.matches("[0-9][0-9A-F]*H")) {
+            return Integer.parseInt(t.substring(0, t.length() - 1), 16);
+        }
+        return Integer.parseInt(t);
+    }
+
     /**
      * Convierte un texto hexadecimal como "20H" o "1A" a entero.
      * Usado por el parser ASM para interpretar valores como INT 20H.

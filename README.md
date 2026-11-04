@@ -44,7 +44,7 @@ memoria, el disco, los BCP y la lista de trabajos.
 - Carga de uno o varios archivos `.asm` a la vez, con validación de sintaxis y mensajes claros (archivo, línea y motivo).
 - Los programas se guardan en disco, con un **índice** (nombre, dirección y tamaño) en los primeros registros.
 - Creación de un **BCP** por proceso con todos los campos del enunciado: estado, PC, registros (AC, AX, BX, CX, DX, IR), pila de 5 con control de desbordamiento, CPU, tiempo de inicio, tiempo empleado, archivos abiertos, enlace al siguiente BCP, base, alcance y prioridad.
-- **Modelo de 7 estados** (Stallings, cap. 3): **Nuevo, Preparado, Ejecución, En espera, Suspendido en espera, Suspendido preparado y Finalizado**.
+- **Modelo de 7 estados** (Stallings, cap. 3): **Nuevo, Preparado, Ejecución, En espera, Suspendido en espera, Suspendido preparado y Finalizado**. Un proceso que termina por un error queda como **Finalizado con error**, en rojo en la cola y en las estadísticas.
 - Los BCP se guardan en la **zona del S.O. de la memoria principal**, cada uno con la dirección de memoria del siguiente BCP.
 - **Lista de trabajos**, **planificador de trabajos** y **lista de procesos**.
 - 1 CPU que administra **hasta 5 procesos** en memoria; si no hay espacio, el proceso espera hasta que se libere.
@@ -54,10 +54,10 @@ memoria, el disco, los BCP y la lista de trabajos.
 - **Despachador** y **cambios de contexto** (cuando un proceso se bloquea por `INT 09H`, al terminar o ante un error).
 - **Memoria virtual**: si un programa no cabe completo en RAM, la parte restante se guarda en la memoria virtual del disco.
 - **Desbordamiento de memoria**: se rechaza un programa más grande que la RAM de usuario + la memoria virtual.
-- **Planificador FCFS**.
+- **Planificador FCFS**, implementado como una clase de la interfaz `AlgoritmoPlanificacion` (paquete `minipc.modelo.algoritmos`): agregar otro algoritmo es crear otra clase, sin tocar el gestor ni la CPU.
 - **Protección y seguridad** (ver sección propia).
 - Visualización del BCP actual, de los BCP en memoria, de los registros (PC, IR, AC…), del tiempo de ejecución y de la lista de trabajos con sus cambios de estado.
-- Configuración de memoria principal y disco desde un **archivo de texto** (`config.txt`) y desde un menú de configuración; la zona del S.O. (25 %) y la memoria virtual (12,5 % del disco) se calculan automáticamente.
+- Configuración de memoria principal, zona del S.O., disco y memoria virtual desde un **archivo de texto** (`config.txt`) y desde un menú de configuración.
 - **Estadísticas**: por proceso, hora:minuto de inicio, hora:minuto final, duración en segundos y tiempo de CPU.
 
 ## Objetivos no alcanzados
@@ -81,16 +81,13 @@ memoria, el disco, los BCP y la lista de trabajos.
 4. **Paso a paso** (1 segundo de CPU por clic) o **Ejecutar** (automático).
 
 La configuración se lee de `config.txt` en la raíz del proyecto. Si no existe, se
-crea con los valores por defecto. Al cerrar el programa, el archivo vuelve a los
-valores por defecto.
-
-Solo se configuran la **memoria principal** y el **disco**; los otros dos tamaños
-se calculan por porcentaje: **zona del S.O. = 25 %** de la memoria principal y
-**memoria virtual = 12,5 %** del disco (256 → 64 y 512 → 64 por defecto).
+crea con los valores por defecto. Los cuatro tamaños se configuran por separado y
+se conservan al cerrar el programa. La zona del S.O. debe tener al menos 16
+posiciones (un BCP); con 80 caben los 5 BCP.
 
 ```
 memoriaPrincipal=256
-memoriaSistema=64
+memoriaSistema=80
 almacenamientoSecundario=512
 memoriaVirtual=64
 ```
@@ -159,7 +156,7 @@ Cargar .asm ──► ParserASM valida ──► se guarda en Disco ──► se
                      ▼                                       │
           Suspendido en espera ──valor──► Suspendido preparado ──► (se recarga)
                                                              ▼
-                                   INT 20H o error ──► Finalizado (libera memoria)
+              INT 20H ──► Finalizado  ·  error ──► Finalizado con error  (libera memoria)
 ```
 
 ---
@@ -168,8 +165,25 @@ Cargar .asm ──► ParserASM valida ──► se guarda en Disco ──► se
 
 | Posiciones | Uso |
 |---|---|
-| 0 – 63 (25 %) | **Zona del S.O.**: un BCP por posición. Ej.: `BCP3\|Ejecución\|PC=85\|AC=0\|…\|Sig=4` (`Sig` = dirección del siguiente BCP) |
-| 64 – 255 | **Zona de usuario**: instrucciones de los programas, cada proceso en un bloque contiguo `[base, base + alcance)` |
+| 0 – 79 | **Zona del S.O.**: 5 bloques de 16 posiciones, uno por BCP (0–15, 16–31, 32–47, 48–63, 64–79). Cada posición guarda **un campo** del BCP |
+| 80 – 255 | **Zona de usuario**: instrucciones de los programas, cada proceso en un bloque contiguo `[base, base + alcance)` |
+
+### Bloque de un BCP (16 posiciones)
+
+| Desplazamiento | Campo | Ejemplo |
+|---|---|---|
+| +0 | Estado | `P1 · Ejecución` |
+| +1 | PC | `PC=82` |
+| +2 | IR | `IR=MOV DX, 0` |
+| +3 … +7 | AC, AX, BX, CX, DX | `AC=0`, `DX=1` |
+| +8 | AH, AL y bandera de CMP | `AH=3CH AL=42 CMP=igual` |
+| +9 | Pila (tamaño 5) y tope | `Pila=[3,4] SP=1` |
+| +10 | Información contable | `CPU=1 inicio=0s empleado=5s` |
+| +11 | Archivos abiertos | `Archivos=a.asm, datos.txt` |
+| +12 | Base | `Base=80` |
+| +13 | Alcance | `Alcance=6` |
+| +14 | Prioridad | `Prioridad=1` |
+| +15 | Enlace al siguiente BCP | `Sig=16` (dirección donde empieza el bloque del siguiente BCP de la cola; `-1` si es el último) |
 
 ## Mapa del disco (512 por defecto)
 
@@ -206,7 +220,9 @@ Cada clic de "Paso a paso" equivale a 1 segundo de CPU. Una instrucción se
 ejecuta cuando se cumplen los segundos de su peso (`CPU.tick()`).
 
 Para `INT 21H`, el nombre del archivo se carga con `MOV DX, "datos.txt"` y los
-valores hexadecimales se escriben como `MOV AH, 3CH`.
+valores hexadecimales se escriben como `MOV AH, 3CH`. El programa se guarda en
+memoria y en disco **tal como se escribió** (`MOV AH, 3CH`); el valor hexadecimal
+se convierte a número recién cuando la CPU ejecuta la instrucción.
 
 ### Validación del archivo `.asm` (`ParserASM`)
 
@@ -238,7 +254,9 @@ planificador y despachador.
 | Método | Qué hace |
 |---|---|
 | `prepararSiguientes()` | **Planificador de trabajos**: pasa programas del disco a memoria (máx. 5); si no caben completos usa memoria virtual; si un proceso en espera bloquea a otro, lo **suspende** |
-| `siguienteProceso()` | **Planificador de CPU (FCFS)**: entrega el primer proceso preparado |
+| `siguienteProceso()` | **Planificador de CPU**: le pide al `AlgoritmoPlanificacion` elegido (FCFS por defecto) qué proceso preparado entra a la CPU |
+| `debeExpropiar()` / `devolverAPreparados()` | Punto de expropiación para algoritmos como RR o SRT: el gestor hace el cambio de contexto y el proceso vuelve a la cola de preparados |
+| `setAlgoritmo()` | Cambia el algoritmo de planificación sin tocar el resto del sistema |
 | `enEspera()` / `salirDeEspera()` | Manejo de procesos bloqueados por teclado |
 | `terminar()` | Libera la memoria, la memoria virtual y la posición del BCP |
 

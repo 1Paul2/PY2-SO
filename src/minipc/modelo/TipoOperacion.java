@@ -35,10 +35,10 @@ public class TipoOperacion {
         "POP"
     );
 
+    // Correccion - Poll: se quita 09H (entrada de teclado), en el proyecto 2 ya no se usa
     private static final Set<String> INTERRUPCIONES = Set.of(
-        "20H", 
-        "10H", 
-        "09H", 
+        "20H",
+        "10H",
         "21H"
     );
 

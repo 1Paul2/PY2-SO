@@ -110,22 +110,4 @@ public class Memoria {
             return -1;
         }
 
-
-        // E: no aplica
-        // S: int[] - {inicio, tamaño} del bloque libre más grande de la zona de usuario ({-1, 0} si no hay)
-        // R: ninguna
-        public int[] huecoMasGrande() {
-            int mejorInicio = -1, mejorTam = 0, inicio = -1, tam = 0;
-            for (int x = inicioUsuario; x < tamanoTotal; x++) {
-                if (!ocupado[x]) {
-                    if (tam == 0) inicio = x;
-                    tam++;
-                    if (tam > mejorTam) { mejorTam = tam; mejorInicio = inicio; }
-                } else {
-                    tam = 0;
-                }
-            }
-            return new int[]{mejorInicio, mejorTam};
-        }
-
 }
