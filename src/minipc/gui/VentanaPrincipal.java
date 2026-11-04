@@ -60,7 +60,7 @@ public class VentanaPrincipal extends JFrame {
 
     // ---- Encabezado y barra de herramientas ----
     private JLabel lblReloj;
-    private Boton btnCargar, btnEjecutar, btnPaso, btnDetener, btnLimpiar, btnEstadisticas, btnConfigurar, btnSalir;
+    private Boton btnCargar, btnEjecutar, btnPaso, btnDetener, btnLlegadas, btnLimpiar, btnEstadisticas, btnConfigurar, btnSalir;
     private JComboBox<String> cmbVelocidad;
 
     // ---- Cola de trabajos ----
@@ -89,7 +89,7 @@ public class VentanaPrincipal extends JFrame {
     private PanelPila panelPila;
 
     // ---- BCP ----
-    private final JLabel[] valoresBCP = new JLabel[10];
+    private final JLabel[] valoresBCP = new JLabel[12];
     private Distintivo distEstadoBCP;
 
     // ---- Disco ----
@@ -181,6 +181,7 @@ public class VentanaPrincipal extends JFrame {
         btnEjecutar     = new Boton("Ejecutar", Tema.VERDE);
         btnPaso         = new Boton("Siguiente", Tema.AZUL);
         btnDetener      = new Boton("Detener", Tema.ROJO);
+        btnLlegadas     = new Boton("Llegadas", Tema.AMBAR);
         btnLimpiar      = new Boton("Limpiar", Tema.GRIS);
         btnEstadisticas = new Boton("Estadísticas", Tema.MORADO);
         btnConfigurar   = new Boton("Configuración", new Color(0x334155));
@@ -192,8 +193,9 @@ public class VentanaPrincipal extends JFrame {
         btnPaso.setToolTipText("Avanzar 1 segundo de CPU (botón \"siguiente\")");
         btnDetener.setToolTipText("Pausar la ejecución automática");
         btnDetener.setEnabled(false);
+        btnLlegadas.setToolTipText("Editar los tiempos de llegada de los procesos que todavía no llegan");
 
-        for (Boton b : new Boton[]{btnCargar, btnEjecutar, btnPaso, btnDetener, btnLimpiar, btnEstadisticas, btnConfigurar}) {
+        for (Boton b : new Boton[]{btnCargar, btnEjecutar, btnPaso, btnDetener, btnLlegadas, btnLimpiar, btnEstadisticas, btnConfigurar}) {
             botones.add(b);
         }
         barra.add(botones, BorderLayout.WEST);
@@ -221,6 +223,7 @@ public class VentanaPrincipal extends JFrame {
         btnEjecutar.addActionListener(e -> iniciarAutomatico());
         btnPaso.addActionListener(e -> pasoManual());
         btnDetener.addActionListener(e -> detenerAutomatico(true));
+        btnLlegadas.addActionListener(e -> editarLlegadas());
         btnLimpiar.addActionListener(e -> limpiar());
         btnEstadisticas.addActionListener(e -> mostrarEstadisticas());
         btnConfigurar.addActionListener(e -> mostrarConfiguracion());
@@ -279,11 +282,14 @@ public class VentanaPrincipal extends JFrame {
     private JPanel crearColumnaIzquierda(){
         // Cola de trabajos (lista de trabajos + lista de procesos)
         tarjetaCola = new Tarjeta("Cola de trabajos", Tema.VERDE);
-        modeloCola = new DefaultTableModel(new String[]{"#", "Programa", "Estado", "Base", "Alcance"}, 0) {
+        modeloCola = new DefaultTableModel(new String[]{"#", "Programa", "Estado", "Base", "Alcance", "Ráfaga", "Llegada (s)"}, 0) {
             @Override public boolean isCellEditable(int r, int c){ return false; }
         };
         tablaCola = new JTable(modeloCola);
         Componentes.estilizarTabla(tablaCola);
+        tablaCola.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+        tablaCola.getColumnModel().getColumn(5).setPreferredWidth(65);
+        tablaCola.getColumnModel().getColumn(6).setPreferredWidth(85);
         tablaCola.getColumnModel().getColumn(0).setCellRenderer(new RenderProceso());
         tablaCola.getColumnModel().getColumn(2).setCellRenderer(new RenderEstado());
         tablaCola.getColumnModel().getColumn(0).setPreferredWidth(44);
@@ -481,7 +487,7 @@ public class VentanaPrincipal extends JFrame {
         JPanel datos = new JPanel(new GridBagLayout());
         datos.setOpaque(false);
         String[] campos = {"Proceso", "Estado", "Base", "Alcance", "Prioridad", "CPU",
-                           "Inicio", "Tiempo empleado", "Dirección del BCP", "Archivos abiertos"};
+                           "Inicio", "Tiempo empleado", "Dirección del BCP", "Archivos abiertos", "Ráfaga", "Llegada"};
         GridBagConstraints g = new GridBagConstraints();
         g.anchor = GridBagConstraints.WEST;
         g.insets = new Insets(2, 0, 2, 10);
@@ -557,6 +563,7 @@ public class VentanaPrincipal extends JFrame {
         selector.setFileFilter(new FileNameExtensionFilter("Programas ensamblador (*.asm)", "asm"));
         if (selector.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
 
+        detenerAutomatico(false);
         asegurarGestor();
         List<String> errores = new ArrayList<>();
         int cargados = 0;
@@ -571,6 +578,7 @@ public class VentanaPrincipal extends JFrame {
                 errores.add("• " + e.getMessage());
             }
         }
+        if (cargados > 0) configurarLlegadas();
         actualizarVista();
 
         if (!errores.isEmpty()) {
@@ -586,6 +594,52 @@ public class VentanaPrincipal extends JFrame {
             sp.setPreferredSize(new Dimension(560, Math.min(260, 60 + errores.size() * 40)));
             JOptionPane.showMessageDialog(this, sp,
                 cargados + " cargado(s), " + errores.size() + " con errores", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    // Botón "Llegadas": edita las llegadas de los procesos que todavía no llegan
+    private void editarLlegadas(){
+        if (gestor == null || gestor.getPendientesLlegada().isEmpty()) {
+            avisar("No hay procesos pendientes de llegar.");
+            return;
+        }
+        configurarLlegadas();
+        actualizarVista();
+    }
+
+    // E: no aplica
+    // S: no aplica (void)
+    // R: solo se muestran los procesos pendientes; al cancelar se conservan sus llegadas
+    private void configurarLlegadas(){
+        List<BCP> procesos = gestor.getPendientesLlegada();
+        int maximo = GestorProcesos.MAX_SEGUNDOS_AUTOMATICO - 1;
+        JPanel campos = new JPanel(new GridLayout(0, 3, 12, 8));
+        campos.add(new JLabel("Proceso / archivo"));
+        campos.add(new JLabel("Ráfaga (líneas)"));
+        campos.add(new JLabel("Llegada (segundos desde 0)"));
+        List<JSpinner> entradas = new ArrayList<>();
+        for (BCP b : procesos) {
+            campos.add(new JLabel("P" + b.getIdProceso() + " - " + b.getArchivosAbiertos().get(0)));
+            campos.add(new JLabel(String.valueOf(b.getRafaga())));
+            JSpinner entrada = new JSpinner(new SpinnerNumberModel(b.getTiempoLlegada(), gestor.getReloj(), maximo, 1));
+            entradas.add(entrada);
+            campos.add(entrada);
+        }
+        JScrollPane scroll = new JScrollPane(campos);
+        scroll.setPreferredSize(new Dimension(660, Math.min(380, 65 + procesos.size() * 35)));
+        while (true) {
+            int opcion = JOptionPane.showConfirmDialog(this, scroll,
+                "Tiempos de llegada · reloj actual: " + gestor.getReloj() + " s",
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+            if (opcion != JOptionPane.OK_OPTION) return; // Conserva las llegadas por defecto.
+            try {
+                for (JSpinner entrada : entradas) entrada.commitEdit();
+                for (int i = 0; i < procesos.size(); i++)
+                    gestor.configurarLlegada(procesos.get(i), ((Number) entradas.get(i).getValue()).intValue());
+                return;
+            } catch (java.text.ParseException | IllegalArgumentException ex) {
+                avisar("Ingrese segundos enteros entre " + gestor.getReloj() + " y " + maximo + ".");
+            }
         }
     }
 
@@ -745,7 +799,9 @@ public class VentanaPrincipal extends JFrame {
                 b.getArchivosAbiertos().isEmpty() ? "-" : b.getArchivosAbiertos().get(0),
                 b.getEstado(),
                 b.getDireccionBase() >= 0 && !b.estaFinalizado() ? b.getDireccionBase() : "-",
-                b.getTamanioProceso()
+                b.getTamanioProceso(),
+                b.getRafaga(),
+                b.getTiempoLlegada()
             });
         }
         int trabajos = gestor.getPlanificador().getListaTrabajos().tamanio();
@@ -875,6 +931,8 @@ public class VentanaPrincipal extends JFrame {
         valoresBCP[8].setText(b.getDireccionBCP() >= 0
             ? "Memoria[" + b.getDireccionBCP() + "–" + (b.getDireccionBCP() + BCP.TAMANO_BLOQUE - 1) + "]" : "-");
         valoresBCP[9].setText(String.join(", ", b.getArchivosAbiertos()));
+        valoresBCP[10].setText(b.getRafaga() + " líneas");
+        valoresBCP[11].setText("t = " + b.getTiempoLlegada() + " s");
     }
 
     // Correccion - Poll: el dueño de cada posición usa el alcance completo y el PC siempre está
@@ -985,6 +1043,7 @@ public class VentanaPrincipal extends JFrame {
         btnEjecutar.setEnabled(!corriendo);
         btnPaso.setEnabled(!corriendo);
         btnCargar.setEnabled(!corriendo);
+        btnLlegadas.setEnabled(!corriendo);
         btnConfigurar.setEnabled(!corriendo);
     }
 
