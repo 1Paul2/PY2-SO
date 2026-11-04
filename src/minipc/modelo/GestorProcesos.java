@@ -31,6 +31,7 @@ public class GestorProcesos {
     private int siguienteIdProceso;
 
     private List<BCP> todosLosProcesos;   // todos los procesos creados, en orden de llegada
+    private final List<BCP> pendientesLlegada = new ArrayList<>();
     private int reloj;                    // segundos simulados transcurridos
     private int segundosEnCPU;            // segundos seguidos del proceso actual en la CPU (para el quantum)
     private LocalTime horaArranque;       // hora real en que arrancó el sistema
@@ -66,6 +67,16 @@ public class GestorProcesos {
     // S: BCP - el proceso creado
     // R: lanza RuntimeException si el programa no cabe en memoria o no hay espacio en disco
     public BCP cargarPrograma(List<Instruccion> instrucciones, String nombreArchivo){
+        return cargarPrograma(instrucciones, nombreArchivo, reloj);
+    }
+
+    // E: instrucciones (List<Instruccion>) - programa ya validado; nombreArchivo (String);
+    //    llegada (int) - segundo en que el proceso llega al sistema
+    // S: BCP - el proceso creado, en estado Nuevo y sin memoria hasta que llegue
+    // R: llegada >= reloj. La ráfaga son las líneas a procesar: no cuenta comentarios ni líneas
+    //    vacías, y como cada instrucción dura 1 s también es el tiempo de CPU que necesita
+    public BCP cargarPrograma(List<Instruccion> instrucciones, String nombreArchivo, int llegada){
+        if (llegada < reloj) throw new IllegalArgumentException("La llegada no puede ser anterior al reloj actual (" + reloj + ")");
         int espacioUsuario = memoria.getTamanoTotal() - memoria.getInicioUsuario();
         if (instrucciones.size() > espacioUsuario) {
             // Desbordamiento de memoria: el programa es más grande que toda la memoria de usuario
@@ -92,16 +103,39 @@ public class GestorProcesos {
 
         BCP bcp = new BCP(siguienteIdProceso, "Nuevo");
         bcp.setTamanioProceso(instrucciones.size());
+        bcp.setRafaga(instrucciones.size());
+        bcp.setTiempoLlegada(llegada);
         bcp.agregarArchivoAbierto(nombreArchivo);
         bcp.setPrioridad(siguienteIdProceso);       // FCFS: prioridad = orden de llegada
         siguienteIdProceso++;
 
         todosLosProcesos.add(bcp);
-        planificador.admitirBCP(bcp);
+        pendientesLlegada.add(bcp);
+        return bcp;
+    }
+
+    // E: bcp (BCP) - proceso que todavía no llega; llegada (int) - nuevo segundo de llegada
+    // S: no aplica (void)
+    // R: el proceso debe seguir pendiente y llegada >= reloj
+    public void configurarLlegada(BCP bcp, int llegada){
+        if (!pendientesLlegada.contains(bcp)) throw new IllegalStateException("El proceso ya llegó");
+        if (llegada < reloj) throw new IllegalArgumentException("La llegada debe ser al menos " + reloj);
+        bcp.setTiempoLlegada(llegada);
+    }
+
+    // Pasa a la lista de trabajos los procesos cuya llegada ya se cumplió
+    private void admitirLlegadas(){
+        // Orden estable: empates por orden de carga, FCFS por llegada real.
+        pendientesLlegada.sort(java.util.Comparator.comparingInt(BCP::getTiempoLlegada));
+        java.util.Iterator<BCP> it = pendientesLlegada.iterator();
+        while (it.hasNext()) {
+            BCP b = it.next();
+            if (b.getTiempoLlegada() > reloj) break;
+            planificador.admitirBCP(b);
+            it.remove();
+        }
         planificador.prepararSiguientes(enEjecucion());
         mostrarMensajesSO();
-        actualizarBCPsEnMemoria();
-        return bcp;
     }
 
     // ===================== Ejecución =====================
@@ -115,12 +149,21 @@ public class GestorProcesos {
     // de cada segundo se le pregunta al algoritmo de planificación si debe expropiar al proceso
     // (FCFS nunca lo hace; RR, SRT y los demás lo usarán)
     public boolean ejecutarUnPaso(){
+        admitirLlegadas();
         if (cpu.getBcpActual() == null) {
             despacharSiguiente();
         }
 
         BCP actual = cpu.getBcpActual();
         if (actual == null) {
+            if (!pendientesLlegada.isEmpty()) {
+                // CPU ociosa por futuras llegadas: avanza el reloj sin gastar CPU.
+                reloj++;
+                admitirLlegadas();
+                if (cpu.getBcpActual() == null) despacharSiguiente();
+                actualizarBCPsEnMemoria();
+                return true;
+            }
             return false;   // CPU ociosa: no hay procesos preparados
         }
 
@@ -139,6 +182,9 @@ public class GestorProcesos {
             return true;
         }
 
+        // Las llegadas de este segundo entran antes de decidir la expropiación: SRT debe verlas,
+        // y en RR quedan en la cola delante del proceso que sale de la CPU
+        admitirLlegadas();
         if (cpu.programaTerminado()) {
             finalizar(actual, false);
         } else if (planificador.debeExpropiar(actual, segundosEnCPU)) {
@@ -192,6 +238,7 @@ public class GestorProcesos {
     // Correccion - Poll (observación PY1): reinicia el contador de segundos en CPU, que usan los
     // algoritmos expropiativos (quantum)
     private void despacharSiguiente(){
+        admitirLlegadas();
         planificador.prepararSiguientes(0);
         mostrarMensajesSO();
         BCP siguiente = planificador.siguienteProceso();
@@ -245,10 +292,17 @@ public class GestorProcesos {
     // ===================== Consultas para la GUI =====================
 
     public boolean hayProcesos(){
-        return cpu.getBcpActual() != null
+        return !pendientesLlegada.isEmpty() || cpu.getBcpActual() != null
             || !planificador.getListaTrabajos().estaVacia()
             || !planificador.getListaProcesos().estaVacia()
             || !planificador.getListaEspera().estaVacia();
+    }
+
+    // E: no aplica
+    // S: List<BCP> - copia de los procesos que todavía no llegan
+    // R: ninguna
+    public List<BCP> getPendientesLlegada(){
+        return new ArrayList<>(pendientesLlegada);
     }
 
     public List<BCP> getTodosLosProcesos(){

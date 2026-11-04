@@ -60,6 +60,8 @@ public class BCP {
     private int prioridad;
     private boolean flagGuardado;
     private int tiempoFin;
+    private int rafaga;
+    private int tiempoLlegada;
     private int direccionBCP;
     private int ahGuardado;           // registro AH (función de INT 21H)
     private int alGuardado;            // registro AL (dato que se lee/escribe con INT 21H)
@@ -295,6 +297,17 @@ public class BCP {
         }
         
 
+        public int getRafaga(){ return rafaga; }
+        public void setRafaga(int valor){
+            if (valor < 0) throw new IllegalArgumentException("Ráfaga negativa");
+            rafaga = valor;
+        }
+        public int getTiempoLlegada(){ return tiempoLlegada; }
+        public void setTiempoLlegada(int valor){
+            if (valor < 0) throw new IllegalArgumentException("Llegada negativa");
+            tiempoLlegada = valor;
+        }
+
         public int getTiempoFin(){ return tiempoFin; }
         public void setTiempoFin(int t){ this.tiempoFin = t; }
 
@@ -339,7 +352,7 @@ public class BCP {
                 "AH=" + String.format("%02XH", ahGuardado) + " AL=" + alGuardado + " CMP=" + (flagGuardado ? "1" : "0"),
                 "Pila=" + pilaTexto() + " SP=" + topePila,
                 "CPU=" + (cpuId < 0 ? "-" : cpuId) + " ini=" + (tiempoInicio < 0 ? "-" : tiempoInicio)
-                    + " emp=" + tiempoEmpleado,
+                    + " emp=" + tiempoEmpleado + " raf=" + rafaga + " lleg=" + tiempoLlegada,
                 "Archivos=" + archivos,
                 "Base=" + direccionBase,
                 "Alcance=" + tamanioProceso,

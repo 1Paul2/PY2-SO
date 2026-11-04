@@ -326,6 +326,33 @@ más programas cuando uno de los 5 que están en memoria espera el teclado.
 
 ---
 
+## Ráfaga y tiempo de llegada
+
+La **ráfaga** es la cantidad de líneas a procesar de cada archivo: no cuenta
+comentarios ni líneas vacías. Cada línea ocupa una posición de memoria y cada
+instrucción dura 1 segundo, así que la ráfaga también es el tiempo de CPU que
+necesita el proceso.
+
+Después de cargar los archivos se abre una ventana con la **llegada** de cada
+proceso, en segundos desde 0. El botón **Llegadas** permite cambiarlas mientras el
+proceso no haya llegado. Al cancelar se conservan las llegadas que ya tenían; por
+defecto es el valor del reloj al cargar.
+
+Hasta su llegada, el proceso queda en estado Nuevo, fuera de las colas y sin
+ocupar memoria. Si no hay nada que ejecutar, el reloj avanza con la CPU ociosa.
+Los empates se resuelven por orden de carga. Las llegadas de cada segundo entran
+antes de decidir una expropiación, y en la cola quedan delante del proceso que
+sale de la CPU.
+
+Prueba, desde la raíz del proyecto:
+
+```bash
+javac -encoding UTF-8 -d build/pruebas $(find src tests -name '*.java')
+java -cp build/pruebas PruebaLlegadas
+```
+
+---
+
 ## Interfaz gráfica
 
 | Panel | Muestra |
