@@ -38,6 +38,11 @@ public interface AlgoritmoPlanificacion {
     //    en la CPU desde que fue despachado; preparados (ColaTrabajo) - procesos esperando la CPU
     // S: boolean - true si el proceso debe salir de la CPU y volver a la cola de preparados
     // R: no debe modificar la cola; los algoritmos no expropiativos devuelven siempre false
+    // Índices de CPU a desalojar en una decisión conjunta. Una entrada null representa una CPU libre.
+    default java.util.List<Integer> reequilibrar(java.util.List<BCP> ocupacion, ColaTrabajo preparados){
+        return java.util.List.of();
+    }
+
     default boolean debeExpropiar(BCP enEjecucion, int segundosEnCPU, ColaTrabajo preparados){
         return false;
     }

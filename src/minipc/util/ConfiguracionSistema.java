@@ -48,6 +48,7 @@ public class ConfiguracionSistema {
     private int almacenamientoSecundario = ALMACENAMIENTO_DEF;
     private int memoriaVirtual = MEMORIA_VIRTUAL_DEF;
     private int cantidadCpus = 1;
+    private String algoritmoCpu = "FCFS";
 
     // E: no aplica
     // S: no aplica (constructor)
@@ -81,9 +82,12 @@ public class ConfiguracionSistema {
         int as = leerEntero(p, "almacenamientoSecundario", almacenamientoSecundario);
         int mv = leerEntero(p, "memoriaVirtual", memoriaVirtual);
         int cpus = leerEntero(p, "cantidadCpus", 1);
+        String algoritmo = p.getProperty("algoritmoCpu", "FCFS").trim();
+        validarAlgoritmoCpu(algoritmo);
         validarCantidadCpus(cpus);
         setTamanos(mp, ms, as, mv);
         cantidadCpus = cpus;
+        algoritmoCpu = algoritmo;
     }
 
     // E: archivo (File) - destino
@@ -96,6 +100,7 @@ public class ConfiguracionSistema {
         p.setProperty("almacenamientoSecundario", String.valueOf(almacenamientoSecundario));
         p.setProperty("memoriaVirtual", String.valueOf(memoriaVirtual));
         p.setProperty("cantidadCpus", String.valueOf(cantidadCpus));
+        p.setProperty("algoritmoCpu", algoritmoCpu);
         try (FileWriter escritor = new FileWriter(archivo)) {
             p.store(escritor, "Configuracion del Mini PC");
         }
@@ -139,6 +144,16 @@ public class ConfiguracionSistema {
         if (cantidad < 1 || cantidad > 5)
             throw new IllegalArgumentException("La cantidad de CPU debe estar entre 1 y 5");
     }
+    private static void validarAlgoritmoCpu(String algoritmo){
+        if (!"FCFS".equals(algoritmo) && !"SRT".equals(algoritmo))
+            throw new IllegalArgumentException("Algoritmo de CPU inválido: " + algoritmo);
+    }
+    public String getAlgoritmoCpu(){ return algoritmoCpu; }
+    public void setAlgoritmoCpu(String algoritmo){
+        validarAlgoritmoCpu(algoritmo);
+        algoritmoCpu = algoritmo;
+    }
+
     public int getCantidadCpus(){ return cantidadCpus; }
     public void setCantidadCpus(int cantidad){
         validarCantidadCpus(cantidad);

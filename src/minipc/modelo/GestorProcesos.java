@@ -70,6 +70,9 @@ public class GestorProcesos {
 
     public GestorProcesos(ConfiguracionSistema c) {
         this(c.getMemoriaPrincipal(), c.getMemoriaSistema(), c.getAlmacenamientoSecundario(), c.getMemoriaVirtual(), c.getCantidadCpus());
+        if ("SRT".equals(c.getAlgoritmoCpu())) {
+            planificador.setAlgoritmo(new minipc.modelo.algoritmos.SRT());
+        }
     }
 
     // ===================== Carga de programas =====================
@@ -235,6 +238,11 @@ public class GestorProcesos {
     }
 
     private void despacharLibres(){
+        List<BCP> ocupacion = new ArrayList<>();
+        for (CPU cpu : cpus) ocupacion.add(cpu.getBcpActual());
+        for (int indice : planificador.getAlgoritmo().reequilibrar(ocupacion, planificador.getListaProcesos())) {
+            expropiar(indice);
+        }
         planificador.prepararSiguientes(enEjecucion());
         mostrarMensajesSO();
         for (int i = 0; i < cpus.size(); i++) {
