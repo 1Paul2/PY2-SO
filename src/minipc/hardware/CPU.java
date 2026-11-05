@@ -20,9 +20,15 @@ public class CPU {
     private Disco disco;          // para leer la parte del programa que está en memoria virtual
     private BCP bcpActual;
     private boolean flagIgual;
-    private List<String> pantalla = new ArrayList<>();
+    private final List<String> pantalla;
 
     public CPU(Memoria memoria){
+        this(memoria, new ArrayList<>());
+    }
+
+    // Todas las CPU del simulador escriben en la misma pantalla, en orden de tick.
+    public CPU(Memoria memoria, List<String> pantalla){
+        this.pantalla = pantalla;
         this.memoria = memoria;
         this.PC = 0;
         this.AC = 0;
