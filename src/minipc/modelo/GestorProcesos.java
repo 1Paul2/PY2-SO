@@ -19,21 +19,23 @@ import java.util.List;
 /**
  * GestorProcesos: punto de entrada del "sistema operativo". Conecta CPU,
  * memoria, disco, planificador y despachador. Cada llamada a ejecutarUnPaso()
- * equivale a 1 segundo de CPU (botón "Paso a paso" / "Siguiente").
+ * equivale a 1 segundo global para todas las CPU (botón "Paso a paso" / "Siguiente").
  */
 public class GestorProcesos {
 
-    private CPU cpu;
+    public static final int MAX_CPUS = 5;
+    private final List<CPU> cpus = new ArrayList<>();
+    private final List<Despachador> despachadores = new ArrayList<>();
+    private final List<String> pantalla = new ArrayList<>();
     private Memoria memoria;
     private Disco disco;
     private Planificador planificador;
-    private Despachador despachador;
     private int siguienteIdProceso;
 
     private List<BCP> todosLosProcesos;   // todos los procesos creados, en orden de llegada
     private final List<BCP> pendientesLlegada = new ArrayList<>();
     private int reloj;                    // segundos simulados transcurridos
-    private int segundosEnCPU;            // segundos seguidos del proceso actual en la CPU (para el quantum)
+    private final int[] segundosEnCPU;    // quantum independiente por CPU
     private LocalTime horaArranque;       // hora real en que arrancó el sistema
 
     public static final int MAX_SEGUNDOS_AUTOMATICO = 100000;
@@ -43,12 +45,23 @@ public class GestorProcesos {
     // S: no aplica (constructor)
     // R: tamanoSistema < tamanoMemoria; tamanoDisco > 10 + tamanoVirtual
     public GestorProcesos(int tamanoMemoria, int tamanoSistema, int tamanoDisco, int tamanoVirtual) {
+        this(tamanoMemoria, tamanoSistema, tamanoDisco, tamanoVirtual, 1);
+    }
+
+    public GestorProcesos(int tamanoMemoria, int tamanoSistema, int tamanoDisco,
+                         int tamanoVirtual, int cantidadCpus) {
+        if (cantidadCpus < 1 || cantidadCpus > MAX_CPUS)
+            throw new IllegalArgumentException("La cantidad de CPU debe estar entre 1 y 5");
         this.memoria = new Memoria(tamanoMemoria, tamanoSistema);
-        this.cpu = new CPU(memoria);
         this.disco = new Disco(tamanoDisco, tamanoVirtual);
-        this.planificador = new Planificador(memoria, disco);
-        this.cpu.setDisco(disco);
-        this.despachador = new Despachador(cpu);
+        this.planificador = new Planificador(memoria, disco, cantidadCpus);
+        this.segundosEnCPU = new int[cantidadCpus];
+        for (int i = 0; i < cantidadCpus; i++) {
+            CPU cpu = new CPU(memoria, pantalla);
+            cpu.setDisco(disco);
+            cpus.add(cpu);
+            despachadores.add(new Despachador(cpu));
+        }
         this.siguienteIdProceso = 1;
         this.todosLosProcesos = new ArrayList<>();
         this.reloj = 0;
@@ -56,7 +69,7 @@ public class GestorProcesos {
     }
 
     public GestorProcesos(ConfiguracionSistema c) {
-        this(c.getMemoriaPrincipal(), c.getMemoriaSistema(), c.getAlmacenamientoSecundario(), c.getMemoriaVirtual());
+        this(c.getMemoriaPrincipal(), c.getMemoriaSistema(), c.getAlmacenamientoSecundario(), c.getMemoriaVirtual(), c.getCantidadCpus());
     }
 
     // ===================== Carga de programas =====================
@@ -142,7 +155,7 @@ public class GestorProcesos {
 
     // E: no aplica
     // S: boolean - true si se ejecutó un segundo de CPU; false si no había nada que ejecutar
-    // R: 1 llamada = 1 segundo de CPU
+    // R: 1 llamada = 1 segundo global; hasta una instrucción por CPU
     // Correccion - Poll: se quita el bloqueo por teclado (INT 09H); la CPU solo queda
     // ociosa si no hay procesos preparados
     // Correccion - Poll (observación PY1): un error deja el proceso "Finalizado con error", y después
@@ -150,50 +163,38 @@ public class GestorProcesos {
     // (FCFS nunca lo hace; RR, SRT y los demás lo usarán)
     public boolean ejecutarUnPaso(){
         admitirLlegadas();
-        if (cpu.getBcpActual() == null) {
-            despacharSiguiente();
-        }
+        despacharLibres();
+        if (enEjecucion() == 0 && pendientesLlegada.isEmpty()) return false;
 
-        BCP actual = cpu.getBcpActual();
-        if (actual == null) {
-            if (!pendientesLlegada.isEmpty()) {
-                // CPU ociosa por futuras llegadas: avanza el reloj sin gastar CPU.
-                reloj++;
-                admitirLlegadas();
-                if (cpu.getBcpActual() == null) despacharSiguiente();
-                actualizarBCPsEnMemoria();
-                return true;
-            }
-            return false;   // CPU ociosa: no hay procesos preparados
-        }
-
+        // Un paso es un segundo GLOBAL: cada CPU ejecuta como máximo una instrucción.
+        // No despachar reemplazos hasta que todas hayan completado este intervalo.
         reloj++;
-        segundosEnCPU++;
-        actual.setTiempoEmpleado(actual.getTiempoEmpleado() + 1);
-
-        try {
-            cpu.tick();
-        } catch (RuntimeException e) {
-            // Error del proceso (pila, salto, acceso a memoria...): se termina solo ese proceso
-            cpu.imprimir("ERROR P" + actual.getIdProceso() + ": " + e.getMessage());
-            finalizar(actual, true);
-            despacharSiguiente();
-            actualizarBCPsEnMemoria();
-            return true;
+        boolean[] errores = new boolean[cpus.size()];
+        for (int i = 0; i < cpus.size(); i++) {
+            CPU cpu = cpus.get(i);
+            BCP actual = cpu.getBcpActual();
+            if (actual == null) continue;
+            segundosEnCPU[i]++;
+            actual.setTiempoEmpleado(actual.getTiempoEmpleado() + 1);
+            try {
+                cpu.tick();
+            } catch (RuntimeException e) {
+                imprimir("ERROR CPU " + (i + 1) + " P" + actual.getIdProceso() + ": " + e.getMessage());
+                errores[i] = true;
+            }
         }
-
-        // Las llegadas de este segundo entran antes de decidir la expropiación: SRT debe verlas,
-        // y en RR quedan en la cola delante del proceso que sale de la CPU
+        // Liberar primero todos los terminados; así las llegadas ven la RAM disponible.
+        for (int i = 0; i < cpus.size(); i++) {
+            if (cpus.get(i).getBcpActual() != null && (errores[i] || cpus.get(i).programaTerminado()))
+                finalizar(i, errores[i]);
+        }
         admitirLlegadas();
-        if (cpu.programaTerminado()) {
-            finalizar(actual, false);
-        } else if (planificador.debeExpropiar(actual, segundosEnCPU)) {
-            expropiar(actual);
+        // Las nuevas llegadas son visibles antes de evaluar expropiación/quantum.
+        for (int i = 0; i < cpus.size(); i++) {
+            BCP actual = cpus.get(i).getBcpActual();
+            if (actual != null && planificador.debeExpropiar(actual, segundosEnCPU[i])) expropiar(i);
         }
-
-        if (cpu.getBcpActual() == null) {
-            despacharSiguiente();
-        }
+        despacharLibres();
         actualizarBCPsEnMemoria();
         return true;
     }
@@ -209,67 +210,64 @@ public class GestorProcesos {
             segundos++;
         }
         if (segundos >= MAX_SEGUNDOS_AUTOMATICO) {
-            cpu.imprimir("Ejecución detenida tras " + MAX_SEGUNDOS_AUTOMATICO + " segundos (¿ciclo infinito?)");
+            imprimir("Ejecución detenida tras " + MAX_SEGUNDOS_AUTOMATICO + " segundos (¿ciclo infinito?)");
         }
     }
 
-    // Correccion - Poll: ya no reinicia el peso de la instrucción (cada instrucción dura 1 s)
-    // Correccion - Poll (observación PY1): recibe si terminó por un error ("Finalizado con error")
-    private void finalizar(BCP bcp, boolean conError){
-        despachador.capturar(bcp);
+    private void finalizar(int indice, boolean conError){
+        CPU cpu = cpus.get(indice);
+        BCP bcp = cpu.getBcpActual();
+        despachadores.get(indice).capturar(bcp);
         bcp.setTiempoFin(reloj);
         planificador.terminar(bcp, conError);
         cpu.setBcpActual(null);
     }
 
-    // Correccion - Poll (observación PY1): cambio de contexto por expropiación. Lo pide el algoritmo
-    // de planificación (por ejemplo, al acabarse el quantum en RR): se guardan los registros en el BCP
-    // y el proceso vuelve a la cola de preparados
-    private void expropiar(BCP bcp){
-        despachador.capturar(bcp);
+    private void expropiar(int indice){
+        CPU cpu = cpus.get(indice);
+        BCP bcp = cpu.getBcpActual();
+        despachadores.get(indice).capturar(bcp);
         planificador.devolverAPreparados(bcp);
         cpu.setBcpActual(null);
-        cpu.imprimir("[SO] Cambio de contexto: " + planificador.getAlgoritmo().getNombre()
-            + " expropia a P" + bcp.getIdProceso() + " tras " + segundosEnCPU + " s en la CPU");
+        imprimir("[SO] Cambio de contexto: " + planificador.getAlgoritmo().getNombre()
+            + " expropia a P" + bcp.getIdProceso() + " en CPU " + (indice + 1)
+            + " tras " + segundosEnCPU[indice] + " s");
     }
 
-    // Correccion - Poll: el aviso del despachador ya no depende de que haya procesos esperando
-    // el teclado; se muestra en cada cambio de contexto
-    // Correccion - Poll (observación PY1): reinicia el contador de segundos en CPU, que usan los
-    // algoritmos expropiativos (quantum)
-    private void despacharSiguiente(){
-        admitirLlegadas();
-        planificador.prepararSiguientes(0);
+    private void despacharLibres(){
+        planificador.prepararSiguientes(enEjecucion());
         mostrarMensajesSO();
-        BCP siguiente = planificador.siguienteProceso();
-        segundosEnCPU = 0;
-        if (siguiente != null) {
-            if (siguiente.getTiempoInicio() < 0) {
-                siguiente.setTiempoInicio(reloj);
-            }
-            siguiente.setCpuId(1);
-            despachador.despachar(siguiente);
-            cpu.imprimir("[SO] Despachador: P" + siguiente.getIdProceso() + " entra a la CPU");
+        for (int i = 0; i < cpus.size(); i++) {
+            if (cpus.get(i).getBcpActual() != null) continue;
+            BCP siguiente = planificador.siguienteProceso();
+            if (siguiente == null) break;
+            segundosEnCPU[i] = 0;
+            if (siguiente.getTiempoInicio() < 0) siguiente.setTiempoInicio(reloj);
+            siguiente.setCpuId(i + 1);
+            despachadores.get(i).despachar(siguiente);
+            imprimir("[SO] Despachador: P" + siguiente.getIdProceso() + " entra a CPU " + (i + 1));
         }
     }
 
     private void mostrarMensajesSO(){
-        for (String m : planificador.tomarMensajes()) {
-            cpu.imprimir(m);
-        }
+        for (String m : planificador.tomarMensajes()) imprimir(m);
     }
 
     private int enEjecucion(){
-        return cpu.getBcpActual() != null ? 1 : 0;
+        int ocupadas = 0;
+        for (CPU cpu : cpus) if (cpu.getBcpActual() != null) ocupadas++;
+        return ocupadas;
     }
 
     // Correccion - Poll (observación PY1): cada BCP ocupa un bloque de BCP.TAMANO_BLOQUE posiciones
     // Escribe cada BCP activo en su bloque de la zona del S.O., un campo por posición
     private void actualizarBCPsEnMemoria(){
-        BCP enCpu = cpu.getBcpActual();
-        if (enCpu != null) {
-            despachador.capturar(enCpu);
-            escribirBCP(enCpu);
+        for (int i = 0; i < cpus.size(); i++) {
+            BCP enCpu = cpus.get(i).getBcpActual();
+            if (enCpu != null) {
+                despachadores.get(i).capturar(enCpu);
+                escribirBCP(enCpu);
+            }
         }
         for (BCP b = planificador.getListaProcesos().getPrimero(); b != null; b = b.getSiguiente()) {
             escribirBCP(b);
@@ -292,7 +290,7 @@ public class GestorProcesos {
     // ===================== Consultas para la GUI =====================
 
     public boolean hayProcesos(){
-        return !pendientesLlegada.isEmpty() || cpu.getBcpActual() != null
+        return !pendientesLlegada.isEmpty() || enEjecucion() > 0
             || !planificador.getListaTrabajos().estaVacia()
             || !planificador.getListaProcesos().estaVacia()
             || !planificador.getListaEspera().estaVacia();
@@ -345,9 +343,16 @@ public class GestorProcesos {
         return filas;
     }
 
-    public CPU getCpu() { return cpu; }
+    // Compatibilidad con clientes de una sola CPU; los índices de getCpu(int) parten de 0.
+    public CPU getCpu() { return cpus.get(0); }
+    public CPU getCpu(int indice) { return cpus.get(indice); }
+    public List<CPU> getCpus() { return java.util.Collections.unmodifiableList(cpus); }
+    public int getCantidadCpus() { return cpus.size(); }
+    public int getCpusOcupadas() { return enEjecucion(); }
+    public void imprimir(String texto) { pantalla.add(texto); }
+    public List<String> getPantalla() { return java.util.Collections.unmodifiableList(pantalla); }
     public Memoria getMemoria() { return memoria; }
     public Disco getDisco() { return disco; }
     public Planificador getPlanificador() { return planificador; }
-    public Despachador getDespachador() { return despachador; }
+    public Despachador getDespachador() { return despachadores.get(0); }
 }

@@ -47,6 +47,7 @@ public class ConfiguracionSistema {
     private int memoriaSistema = MEMORIA_SISTEMA_DEF;
     private int almacenamientoSecundario = ALMACENAMIENTO_DEF;
     private int memoriaVirtual = MEMORIA_VIRTUAL_DEF;
+    private int cantidadCpus = 1;
 
     // E: no aplica
     // S: no aplica (constructor)
@@ -79,7 +80,10 @@ public class ConfiguracionSistema {
         int ms = leerEntero(p, "memoriaSistema", memoriaSistema);
         int as = leerEntero(p, "almacenamientoSecundario", almacenamientoSecundario);
         int mv = leerEntero(p, "memoriaVirtual", memoriaVirtual);
+        int cpus = leerEntero(p, "cantidadCpus", 1);
+        validarCantidadCpus(cpus);
         setTamanos(mp, ms, as, mv);
+        cantidadCpus = cpus;
     }
 
     // E: archivo (File) - destino
@@ -91,6 +95,7 @@ public class ConfiguracionSistema {
         p.setProperty("memoriaSistema", String.valueOf(memoriaSistema));
         p.setProperty("almacenamientoSecundario", String.valueOf(almacenamientoSecundario));
         p.setProperty("memoriaVirtual", String.valueOf(memoriaVirtual));
+        p.setProperty("cantidadCpus", String.valueOf(cantidadCpus));
         try (FileWriter escritor = new FileWriter(archivo)) {
             p.store(escritor, "Configuracion del Mini PC");
         }
@@ -128,6 +133,16 @@ public class ConfiguracionSistema {
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("El valor de \"" + clave + "\" no es un número: " + v);
         }
+    }
+
+    public static void validarCantidadCpus(int cantidad){
+        if (cantidad < 1 || cantidad > 5)
+            throw new IllegalArgumentException("La cantidad de CPU debe estar entre 1 y 5");
+    }
+    public int getCantidadCpus(){ return cantidadCpus; }
+    public void setCantidadCpus(int cantidad){
+        validarCantidadCpus(cantidad);
+        cantidadCpus = cantidad;
     }
 
     public int getMemoriaPrincipal(){

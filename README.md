@@ -392,3 +392,55 @@ CMP DX, CX
 JNE -3         ; vuelve a INC DX mientras DX != 5
 INT 20H
 ```
+
+## Proyecto 2: múltiples CPU
+
+Rama: `feature/multiples-cpu`, creada desde `origin/dev`.
+
+Antes de cargar los programas, abrir **Configuración** y seleccionar de **1 a 5
+CPU**. La selección se guarda como `cantidadCpus` en `config.txt`; los archivos
+anteriores que no tienen esa propiedad siguen usando una CPU. Para cambiarla
+con una simulación en curso, usar **Limpiar** y configurar la siguiente ejecución.
+
+Cada clic en **Siguiente** avanza un segundo del reloj global. Cada CPU ocupada
+ejecuta una instrucción durante ese intervalo; cinco CPU no suman cinco segundos
+al reloj. **Ejecutar** aplica el mismo ciclo en modo automático o instantáneo.
+La ejecución se simula en orden de CPU, sin hilos reales: las operaciones sobre
+memoria, disco y pantalla compartidos son deterministas. Un fallo de un proceso
+finaliza únicamente ese proceso.
+
+Se utiliza una cola de preparados compartida y hasta cinco procesos residentes
+por CPU de capacidad agregada (25 con cinco CPU), sin afinidad fija. Los registros,
+la pila, el BCP y el contador de quantum pertenecen a cada contexto. Un proceso
+expropiado puede continuar en otra CPU. La capacidad efectiva también depende de
+la RAM y de los bloques BCP disponibles; los excedentes esperan en disco.
+
+Cada BCP requiere 16 posiciones del S.O.: para admitir 25 procesos residentes se
+necesitan **400 posiciones de S.O.**, más la memoria de usuario para sus programas.
+Un ejemplo de configuración es memoria principal 1024, S.O. 400, disco 2048,
+memoria virtual 64 y cantidadCpus 5. La configuración inicial S.O. 80 permite cinco
+residentes aunque se hayan seleccionado cinco CPU. El diálogo muestra la cantidad
+de posiciones requerida para los grupos completos.
+
+**Dispositivos** muestra el proceso, estado y PC de todas las CPU. Seleccionar una
+fila o usar **Detalle de CPU** para inspeccionar sus registros, pila y BCP. La cola
+de trabajos incluye la columna CPU (última CPU asignada para procesos preparados o
+finalizados). El mapa resalta los procesos ejecutándose en todos los núcleos; la
+tabla de memoria sigue el PC de la CPU seleccionada. La pantalla reúne las salidas
+de todas las CPU.
+
+Pruebas de regresión desde PowerShell en la raíz del repositorio:
+
+```powershell
+New-Item -ItemType Directory -Force build/classes | Out-Null
+$fuentes = @(Get-ChildItem src -Recurse -Filter *.java | ForEach-Object FullName)
+javac -encoding UTF-8 -d build/classes $fuentes tests/PruebaLlegadas.java tests/PruebaMultiplesCpu.java
+java -cp build/classes PruebaLlegadas
+java -cp build/classes PruebaMultiplesCpu
+```
+
+Las pruebas cubren las cantidades 1-5, reloj compartido, registros independientes,
+25 residentes con excedentes, llegadas futuras, memoria limitada, aislamiento de
+errores, pantalla compartida, persistencia y migración por expropiación. La prueba
+usa un algoritmo RR de ejemplo interno; los algoritmos nuevos de producción y las
+estadísticas acumuladas siguen siendo tareas independientes.

@@ -39,7 +39,8 @@ public class Planificador {
     // Algoritmo del planificador de CPU (FCFS por defecto)
     private AlgoritmoPlanificacion algoritmo = new FCFS();
 
-    public static final int MAX_PROCESOS_EN_MEMORIA = 5;
+    public static final int MAX_PROCESOS_EN_MEMORIA = 5; // por CPU
+    private final int maxProcesosEnMemoria;
 
     // Avisos del S.O. (p. ej. uso de memoria virtual) que el gestor muestra en pantalla
     private final List<String> mensajes = new ArrayList<>();
@@ -59,19 +60,28 @@ public class Planificador {
     // S: no aplica (constructor)
     // R: la zona del S.O. debe tener al menos BCP.TAMANO_BLOQUE posiciones para guardar un BCP
     public Planificador(Memoria memoria, Disco disco) {
+        this(memoria, disco, 1);
+    }
+
+    public Planificador(Memoria memoria, Disco disco, int cantidadCpus) {
+        if (cantidadCpus < 1 || cantidadCpus > GestorProcesos.MAX_CPUS)
+            throw new IllegalArgumentException("La cantidad de CPU debe estar entre 1 y 5");
+        this.maxProcesosEnMemoria = MAX_PROCESOS_EN_MEMORIA * cantidadCpus;
         this.listaTrabajos = new ColaTrabajo();
         this.listaProcesos = new ColaTrabajo();
         this.listaEspera = new ColaTrabajo();
         this.listaFinalizados = new ColaTrabajo();
         this.memoria = memoria;
         this.disco = disco;
-        int slots = Math.min(MAX_PROCESOS_EN_MEMORIA, memoria.getInicioUsuario() / BCP.TAMANO_BLOQUE);
+        int slots = Math.min(maxProcesosEnMemoria, memoria.getInicioUsuario() / BCP.TAMANO_BLOQUE);
         this.slotsBCP = new boolean[slots];
     }
 
     // E: no aplica
     // S: int - cuántos BCP caben en la zona del S.O. (como máximo MAX_PROCESOS_EN_MEMORIA)
     // R: ninguna
+    public int getMaxProcesosEnMemoria(){ return maxProcesosEnMemoria; }
+
     public int getCapacidadBCP(){
         return slotsBCP.length;
     }
@@ -97,7 +107,7 @@ public class Planificador {
         listaTrabajos.encolar(bcp);
     }
 
-    // E: enEjecucion (int) - 1 si hay un proceso en la CPU, 0 si no
+    // E: enEjecucion (int) - cantidad de CPU ocupadas, 0 si no
     // S: no aplica (void)
     // R: respeta FCFS estricto: si el primero no cabe, los de atrás esperan.
     //    Si el primero no puede entrar (límite de 5 procesos o falta de memoria) y hay
@@ -105,7 +115,7 @@ public class Planificador {
     //    (sale de la memoria) para darle espacio.
     public void prepararSiguientes(int enEjecucion) {
         while (!listaTrabajos.estaVacia()) {
-            boolean cargado = procesosEnMemoria(enEjecucion) < MAX_PROCESOS_EN_MEMORIA
+            boolean cargado = procesosEnMemoria(enEjecucion) < maxProcesosEnMemoria
                 && intentarCargar(listaTrabajos.getPrimero());
             if (cargado) continue;
             if (!suspenderUnoEnEspera(listaTrabajos.getPrimero())) break;   // nadie para suspender: espera
@@ -184,7 +194,7 @@ public class Planificador {
         bcp.setDireccionBase(-1);
     }
 
-    // E: enEjecucion (int) - 1 si hay un proceso en la CPU
+    // E: enEjecucion (int) - cantidad de CPU ocupadas
     // S: int - procesos que ocupan memoria (los suspendidos no cuentan)
     // R: ninguna
     public int procesosEnMemoria(int enEjecucion){

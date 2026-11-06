@@ -62,6 +62,8 @@ public class VentanaPrincipal extends JFrame {
     private JLabel lblReloj;
     private Boton btnCargar, btnEjecutar, btnPaso, btnDetener, btnLlegadas, btnLimpiar, btnEstadisticas, btnConfigurar, btnSalir;
     private JComboBox<String> cmbVelocidad;
+    private JComboBox<String> cmbCpuDetalle;
+    private DefaultTableModel modeloCpus;
 
     // ---- Cola de trabajos ----
     private Tarjeta tarjetaCola;
@@ -190,7 +192,7 @@ public class VentanaPrincipal extends JFrame {
 
         btnCargar.setToolTipText("Cargar uno o varios archivos .asm");
         btnEjecutar.setToolTipText("Ejecutar automáticamente todos los procesos hasta su finalización");
-        btnPaso.setToolTipText("Avanzar 1 segundo de CPU (botón \"siguiente\")");
+        btnPaso.setToolTipText("Avanzar un segundo global en todas las CPU");
         btnDetener.setToolTipText("Pausar la ejecución automática");
         btnDetener.setEnabled(false);
         btnLlegadas.setToolTipText("Editar los tiempos de llegada de los procesos que todavía no llegan");
@@ -251,11 +253,20 @@ public class VentanaPrincipal extends JFrame {
         g.insets = new Insets(0, 0, 0, 12);
 
         g.gridx = 0; g.weightx = 0.27;
-        cuerpo.add(crearColumnaIzquierda(), g);
+        JPanel izquierda = crearColumnaIzquierda();
+        izquierda.setPreferredSize(new Dimension(380, 700));
+        izquierda.setMinimumSize(new Dimension(300, 0));
+        cuerpo.add(izquierda, g);
         g.gridx = 1; g.weightx = 0.45;
-        cuerpo.add(crearColumnaCentral(), g);
+        JPanel central = crearColumnaCentral();
+        central.setPreferredSize(new Dimension(650, 700));
+        central.setMinimumSize(new Dimension(400, 0));
+        cuerpo.add(central, g);
         g.gridx = 2; g.weightx = 0.28; g.insets = new Insets(0, 0, 0, 0);
-        cuerpo.add(crearColumnaDerecha(), g);
+        JPanel derecha = crearColumnaDerecha();
+        derecha.setPreferredSize(new Dimension(400, 700));
+        derecha.setMinimumSize(new Dimension(320, 0));
+        cuerpo.add(derecha, g);
         return cuerpo;
     }
 
@@ -282,7 +293,7 @@ public class VentanaPrincipal extends JFrame {
     private JPanel crearColumnaIzquierda(){
         // Cola de trabajos (lista de trabajos + lista de procesos)
         tarjetaCola = new Tarjeta("Cola de trabajos", Tema.VERDE);
-        modeloCola = new DefaultTableModel(new String[]{"#", "Programa", "Estado", "Base", "Alcance", "Ráfaga", "Llegada (s)"}, 0) {
+        modeloCola = new DefaultTableModel(new String[]{"#", "Programa", "Estado", "Base", "Alcance", "Ráfaga", "Llegada (s)", "CPU"}, 0) {
             @Override public boolean isCellEditable(int r, int c){ return false; }
         };
         tablaCola = new JTable(modeloCola);
@@ -298,7 +309,10 @@ public class VentanaPrincipal extends JFrame {
         tablaCola.getColumnModel().getColumn(3).setPreferredWidth(50);
         tablaCola.getColumnModel().getColumn(4).setPreferredWidth(60);
         tarjetaCola.getContenido().add(Componentes.scroll(tablaCola), BorderLayout.CENTER);
-        tarjetaCola.getContenido().add(crearLeyendaEstados(), BorderLayout.SOUTH);
+        JScrollPane estados = Componentes.scroll(crearLeyendaEstados());
+        estados.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_NEVER);
+        estados.setPreferredSize(new Dimension(300, 48));
+        tarjetaCola.getContenido().add(estados, BorderLayout.SOUTH);
 
         // Recursos del sistema
         Tarjeta recursos = new Tarjeta("Recursos del sistema", Tema.AZUL);
@@ -323,10 +337,25 @@ public class VentanaPrincipal extends JFrame {
         dispCPU = new Distintivo();
         dispPantalla = new Distintivo();
         dispDisco = new Distintivo();
-        filas.add(filaDispositivo("CPU 1", dispCPU));
+        filas.add(filaDispositivo("CPU ocupadas", dispCPU));
         filas.add(filaDispositivo("Pantalla", dispPantalla));
         filas.add(filaDispositivo("Disco", dispDisco));
-        dispositivos.getContenido().add(filas, BorderLayout.NORTH);
+        modeloCpus = new DefaultTableModel(new String[]{"CPU", "Proceso", "Estado", "PC"}, 0) {
+            @Override public boolean isCellEditable(int r, int c){ return false; }
+        };
+        JTable tablaCpus = new JTable(modeloCpus);
+        Componentes.estilizarTabla(tablaCpus);
+        tablaCpus.setRowHeight(22);
+        tablaCpus.getSelectionModel().addListSelectionListener(e -> {
+            int fila = tablaCpus.getSelectedRow();
+            if (!e.getValueIsAdjusting() && fila >= 0 && fila < cmbCpuDetalle.getItemCount())
+                cmbCpuDetalle.setSelectedIndex(fila);
+        });
+        JScrollPane resumenCpus = Componentes.scroll(tablaCpus);
+        resumenCpus.setPreferredSize(new Dimension(260, 160));
+        resumenCpus.setMinimumSize(new Dimension(220, 160));
+        dispositivos.getContenido().add(resumenCpus, BorderLayout.CENTER);
+        dispositivos.getContenido().add(filas, BorderLayout.SOUTH);
 
         return columna(new Component[]{tarjetaCola, recursos, dispositivos}, new double[]{1.0, 0.0, 0.0});
     }
@@ -442,7 +471,7 @@ public class VentanaPrincipal extends JFrame {
     // Correccion - Poll: se quita la barra de progreso de la instrucción según su peso
     private JPanel crearColumnaDerecha(){
         // CPU
-        Tarjeta cpu = new Tarjeta("CPU 1", Tema.VERDE);
+        Tarjeta cpu = new Tarjeta("Detalle de CPU", Tema.VERDE);
         JPanel contCPU = new JPanel(new BorderLayout(0, 10));
         contCPU.setOpaque(false);
 
@@ -455,7 +484,21 @@ public class VentanaPrincipal extends JFrame {
         distEstadoCPU.setPreferredSize(new Dimension(110, 24));
         filaProceso.add(lblProcesoActual, BorderLayout.CENTER);
         filaProceso.add(distEstadoCPU, BorderLayout.EAST);
-        contCPU.add(filaProceso, BorderLayout.NORTH);
+        cmbCpuDetalle = new JComboBox<>();
+        cmbCpuDetalle.setFont(Tema.NORMAL);
+        cmbCpuDetalle.setToolTipText("CPU cuyos registros, pila y BCP se muestran abajo");
+        cmbCpuDetalle.addActionListener(e -> {
+            if (gestor != null) {
+                actualizarCPU();
+                actualizarBCP();
+                actualizarMemoria();
+            }
+        });
+        JPanel cabeceraCpu = new JPanel(new BorderLayout(0, 6));
+        cabeceraCpu.setOpaque(false);
+        cabeceraCpu.add(cmbCpuDetalle, BorderLayout.NORTH);
+        cabeceraCpu.add(filaProceso, BorderLayout.SOUTH);
+        contCPU.add(cabeceraCpu, BorderLayout.NORTH);
 
         JPanel registros = new JPanel(new GridLayout(5, 2, 8, 6));
         registros.setOpaque(false);
@@ -514,7 +557,13 @@ public class VentanaPrincipal extends JFrame {
         }
         bcp.getContenido().add(datos, BorderLayout.NORTH);
 
-        return columna(new Component[]{cpu, pila, bcp}, new double[]{0.0, 0.0, 1.0});
+        JPanel detalle = new JPanel(new BorderLayout());
+        detalle.setOpaque(false);
+        JScrollPane scroll = Componentes.scroll(columna(new Component[]{cpu, pila, bcp}, new double[]{0.0, 0.0, 1.0}));
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.getVerticalScrollBar().setUnitIncrement(18);
+        detalle.add(scroll, BorderLayout.CENTER);
+        return detalle;
     }
 
     private JPanel crearRegistro(String nombre, Color color, int indice){
@@ -571,7 +620,7 @@ public class VentanaPrincipal extends JFrame {
             try {
                 List<Instruccion> instrucciones = ParserASM.leerArchivo(archivo);
                 BCP bcp = gestor.cargarPrograma(instrucciones, archivo.getName());
-                gestor.getCpu().imprimir("[SO] " + archivo.getName() + " cargado como P"
+                gestor.imprimir("[SO] " + archivo.getName() + " cargado como P"
                     + bcp.getIdProceso() + " (" + instrucciones.size() + " instrucciones)");
                 cargados++;
             } catch (Exception e) {
@@ -687,7 +736,7 @@ public class VentanaPrincipal extends JFrame {
     private void detenerAutomatico(boolean manual){
         modoAutomatico = false;
         timerAuto.stop();
-        if (manual && gestor != null) gestor.getCpu().imprimir("[SO] Ejecución automática pausada");
+        if (manual && gestor != null) gestor.imprimir("[SO] Ejecución automática pausada");
         actualizarBotones();
         actualizarVista();
     }
@@ -698,7 +747,7 @@ public class VentanaPrincipal extends JFrame {
 
     private void finEjecucion(){
         detenerAutomatico(false);
-        gestor.getCpu().imprimir("[SO] Todos los procesos finalizaron en " + gestor.getReloj() + " s");
+        gestor.imprimir("[SO] Todos los procesos finalizaron en " + gestor.getReloj() + " s");
         actualizarVista();
         int r = JOptionPane.showConfirmDialog(this, "Todos los procesos finalizaron.\n¿Ver estadísticas?",
             "Ejecución completa", JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE);
@@ -766,6 +815,7 @@ public class VentanaPrincipal extends JFrame {
     // S: no aplica (void)
     // R: refresca todos los paneles con el estado actual del GestorProcesos
     private void actualizarVista(){
+        actualizarResumenCpus();
         actualizarEncabezado();
         actualizarCola();
         actualizarRecursos();
@@ -778,6 +828,30 @@ public class VentanaPrincipal extends JFrame {
     }
 
     // Correccion - Poll: se quita la hora real (HH:mm:ss); queda solo el tiempo en segundos desde 0
+    private CPU cpuSeleccionada(){
+        if (gestor == null) return null;
+        int indice = Math.max(0, cmbCpuDetalle.getSelectedIndex());
+        return gestor.getCpu(Math.min(indice, gestor.getCantidadCpus() - 1));
+    }
+
+    private void actualizarResumenCpus(){
+        int cantidad = gestor == null ? configuracion.getCantidadCpus() : gestor.getCantidadCpus();
+        if (cmbCpuDetalle.getItemCount() != cantidad) {
+            cmbCpuDetalle.removeAllItems();
+            for (int i = 1; i <= cantidad; i++) cmbCpuDetalle.addItem("CPU " + i);
+            cmbCpuDetalle.setSelectedIndex(0);
+        }
+        modeloCpus.setRowCount(cantidad);
+        for (int i = 0; i < cantidad; i++) {
+            CPU cpu = gestor == null ? null : gestor.getCpu(i);
+            BCP b = cpu == null ? null : cpu.getBcpActual();
+            modeloCpus.setValueAt("CPU " + (i + 1), i, 0);
+            modeloCpus.setValueAt(b == null ? "-" : "P" + b.getIdProceso(), i, 1);
+            modeloCpus.setValueAt(b == null ? "Ociosa" : "Ejecución", i, 2);
+            modeloCpus.setValueAt(b == null ? "-" : cpu.getPC(), i, 3);
+        }
+    }
+
     private void actualizarEncabezado(){
         if (gestor == null) {
             ((Distintivo) lblReloj).setColores("Tiempo  0 s", Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
@@ -801,7 +875,8 @@ public class VentanaPrincipal extends JFrame {
                 b.getDireccionBase() >= 0 && !b.estaFinalizado() ? b.getDireccionBase() : "-",
                 b.getTamanioProceso(),
                 b.getRafaga(),
-                b.getTiempoLlegada()
+                b.getTiempoLlegada(),
+                b.getCpuId() > 0 ? "CPU " + b.getCpuId() : "-"
             });
         }
         int trabajos = gestor.getPlanificador().getListaTrabajos().tamanio();
@@ -815,9 +890,9 @@ public class VentanaPrincipal extends JFrame {
     private void actualizarRecursos(){
         if (gestor == null) {
             int usuario = configuracion.getMemoriaPrincipal() - configuracion.getMemoriaSistema();
-            barraProcesos.setValor(0, Planificador.MAX_PROCESOS_EN_MEMORIA);
+            barraProcesos.setValor(0, Planificador.MAX_PROCESOS_EN_MEMORIA * configuracion.getCantidadCpus());
             barraMemoria.setValor(0, usuario);
-            barraBCP.setValor(0, Math.min(Planificador.MAX_PROCESOS_EN_MEMORIA,
+            barraBCP.setValor(0, Math.min(Planificador.MAX_PROCESOS_EN_MEMORIA * configuracion.getCantidadCpus(),
                 configuracion.getMemoriaSistema() / BCP.TAMANO_BLOQUE));
             barraDisco.setValor(0, configuracion.getAlmacenamientoSecundario());
             barraVirtual.setValor(0, configuracion.getMemoriaVirtual());
@@ -845,17 +920,18 @@ public class VentanaPrincipal extends JFrame {
                 if (i < d.getTamanoIndice()) archivos++;
             }
         }
-        barraProcesos.setValor(gestor.procesosEnMemoria(), Planificador.MAX_PROCESOS_EN_MEMORIA);
+        barraProcesos.setValor(gestor.procesosEnMemoria(), gestor.getPlanificador().getMaxProcesosEnMemoria());
         barraMemoria.setValor(usuarioUsado, usuarioTotal);
         barraBCP.setValor(bcps, gestor.getPlanificador().getCapacidadBCP());
         barraDisco.setValor(discoUsado, d.getTamanoTotal());
         barraVirtual.setValor(d.virtualUsada(), d.getTamanoMemoriaVirtual());
 
-        BCP enCpu = gestor.getCpu().getBcpActual();
-        if (enCpu != null) dispCPU.setColores("Ejecutando P" + enCpu.getIdProceso(), Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
-        else dispCPU.setColores("Libre", Tema.GRIS, Tema.GRIS_CLARO);
+        int ocupadas = gestor.getCpusOcupadas();
+        dispCPU.setColores(ocupadas + "/" + gestor.getCantidadCpus() + " ejecutando",
+            ocupadas > 0 ? Tema.VERDE_OSCURO : Tema.GRIS,
+            ocupadas > 0 ? Tema.VERDE_CLARO : Tema.GRIS_CLARO);
 
-        dispPantalla.setColores(gestor.getCpu().getPantalla().isEmpty() ? "Lista" : "Mostrando salida",
+        dispPantalla.setColores(gestor.getPantalla().isEmpty() ? "Lista" : "Mostrando salida",
             Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
 
         dispDisco.setColores(archivos + " archivo(s)", Tema.MORADO, Tema.MORADO_CLARO);
@@ -864,7 +940,7 @@ public class VentanaPrincipal extends JFrame {
     // Correccion - Poll: ya no muestra "N de M s" según el peso; cada instrucción dura 1 s.
     // Tampoco muestra "desde memoria virtual" (memoria virtual partida)
     private void actualizarCPU(){
-        CPU cpu = gestor == null ? null : gestor.getCpu();
+        CPU cpu = gestor == null ? null : cpuSeleccionada();
         BCP actual = cpu == null ? null : cpu.getBcpActual();
 
         if (actual == null) {
@@ -913,7 +989,7 @@ public class VentanaPrincipal extends JFrame {
     // y el alcance ya no se divide en "RAM + virtual"
     // Correccion - Poll (observación PY1): la dirección del BCP muestra el bloque completo que ocupa
     private void actualizarBCP(){
-        BCP b = (gestor == null) ? null : gestor.getCpu().getBcpActual();
+        BCP b = (gestor == null) ? null : cpuSeleccionada().getBcpActual();
         panelPila.setBCP(b);
         if (b == null) {
             for (JLabel l : valoresBCP) if (l != null) l.setText("-");
@@ -972,8 +1048,8 @@ public class VentanaPrincipal extends JFrame {
             modeloMemoria.setValueAt(duenoPosicion[i], i, 2);
         }
 
-        BCP actual = gestor.getCpu().getBcpActual();
-        int nuevoPC = actual == null ? -1 : gestor.getCpu().getPC();
+        BCP actual = cpuSeleccionada().getBcpActual();
+        int nuevoPC = actual == null ? -1 : cpuSeleccionada().getPC();
         if (nuevoPC != posicionPC && nuevoPC >= 0 && nuevoPC < total) {
             tablaMemoria.scrollRectToVisible(tablaMemoria.getCellRect(Math.min(total - 1, nuevoPC + 3), 0, true));
             tablaMemoria.scrollRectToVisible(tablaMemoria.getCellRect(nuevoPC, 0, true));
@@ -1010,7 +1086,7 @@ public class VentanaPrincipal extends JFrame {
         areaPantalla.setText("");
 
         if (gestor != null) {
-            for (String linea : gestor.getCpu().getPantalla()) {
+            for (String linea : gestor.getPantalla()) {
                 SimpleAttributeSet a = new SimpleAttributeSet();
                 StyleConstants.setFontFamily(a, Tema.MONO_NORMAL.getFamily());
                 StyleConstants.setFontSize(a, 13);
@@ -1118,10 +1194,16 @@ public class VentanaPrincipal extends JFrame {
     // Correccion - Poll: la zona del S.O. y la memoria virtual se pueden editar; ya no se
     // calculan con porcentajes fijos (25 % y 12,5 %)
     private void mostrarConfiguracion(){
+        if (gestor != null && gestor.getReloj() > 0 && gestor.hayProcesos()) {
+            avisar("La cantidad de CPU se configura antes de ejecutar. Usá Limpiar para iniciar otra simulación.");
+            return;
+        }
         JDialog dlg = new JDialog(this, "Configuración del Mini PC", true);
         Tarjeta t = new Tarjeta("Tamaños (se guardan en " + ConfiguracionSistema.ARCHIVO_POR_DEFECTO + ")", Tema.VERDE);
-        JPanel campos = new JPanel(new GridLayout(4, 2, 10, 10));
+        JPanel campos = new JPanel(new GridLayout(5, 2, 10, 10));
         campos.setOpaque(false);
+        JSpinner cantidadCpus = new JSpinner(new SpinnerNumberModel(configuracion.getCantidadCpus(), 1, GestorProcesos.MAX_CPUS, 1));
+        campos.add(etiqueta("Cantidad de CPU (1 a 5)")); campos.add(cantidadCpus);
         JTextField mp = campo(configuracion.getMemoriaPrincipal());
         JTextField ms = campo(configuracion.getMemoriaSistema());
         JTextField as = campo(configuracion.getAlmacenamientoSecundario());
@@ -1131,6 +1213,15 @@ public class VentanaPrincipal extends JFrame {
         campos.add(etiqueta("Almacenamiento secundario"));       campos.add(as);
         campos.add(etiqueta("Memoria virtual (en disco)"));      campos.add(mv);
         t.getContenido().add(campos, BorderLayout.CENTER);
+        JLabel capacidad = etiqueta("");
+        Runnable mostrarCapacidad = () -> {
+            int n = ((Number) cantidadCpus.getValue()).intValue();
+            capacidad.setText("Hasta " + (5 * n) + " procesos; " + (5 * n * BCP.TAMANO_BLOQUE)
+                + " posiciones de S.O. para sus BCP (además de la RAM de usuario).");
+        };
+        cantidadCpus.addChangeListener(e -> mostrarCapacidad.run());
+        mostrarCapacidad.run();
+        t.getContenido().add(capacidad, BorderLayout.SOUTH);
 
         Boton cargar = new Boton("Cargar archivo...", Tema.GRIS);
         Boton aplicar = new Boton("Guardar y aplicar", Tema.VERDE);
@@ -1141,6 +1232,7 @@ public class VentanaPrincipal extends JFrame {
             if (sel.showOpenDialog(dlg) == JFileChooser.APPROVE_OPTION) {
                 try {
                     configuracion.cargarDesdeArchivo(sel.getSelectedFile());
+                    cantidadCpus.setValue(configuracion.getCantidadCpus());
                     mp.setText(String.valueOf(configuracion.getMemoriaPrincipal()));
                     ms.setText(String.valueOf(configuracion.getMemoriaSistema()));
                     as.setText(String.valueOf(configuracion.getAlmacenamientoSecundario()));
@@ -1153,9 +1245,11 @@ public class VentanaPrincipal extends JFrame {
 
         aplicar.addActionListener(e -> {
             try {
+                cantidadCpus.commitEdit();
                 configuracion.setTamanos(
                     Integer.parseInt(mp.getText().trim()), Integer.parseInt(ms.getText().trim()),
                     Integer.parseInt(as.getText().trim()), Integer.parseInt(mv.getText().trim()));
+                configuracion.setCantidadCpus(((Number) cantidadCpus.getValue()).intValue());
                 configuracion.guardarEnArchivo(new File(ConfiguracionSistema.ARCHIVO_POR_DEFECTO));
             } catch (NumberFormatException ex) {
                 JOptionPane.showMessageDialog(dlg, "Los cuatro tamaños deben ser números enteros.", "Error", JOptionPane.ERROR_MESSAGE);
@@ -1824,25 +1918,27 @@ public class VentanaPrincipal extends JFrame {
 
             // Bloques de procesos (ordenados por base; si son muy pequeños se separan
             // un poco para que las etiquetas no se encimen)
-            BCP enCpu = gestor.getCpu().getBcpActual();
             List<BCP> bloques = procesosEnMemoria();
             bloques.sort((a, b) -> Integer.compare(a.getDireccionBase(), b.getDireccionBase()));
             int finAnterior = ySO + hSO + 2;
             int ultimaEtiqueta = ySO;
-            int yPCBloque = -1, altoPCBloque = 0;
             for (BCP b : bloques) {
                 int y = Math.max(arriba + (int) Math.round(b.getDireccionBase() * escala), finAnterior);
                 int alto = Math.max(18, (int) Math.round(b.getTamanioProceso() * escala));
                 Color c = Tema.colorProceso(b.getIdProceso());
                 g2.setColor(c);
                 g2.fillRoundRect(x, y, w, alto, 10, 10);
-                if (b == enCpu) {
+                if ("Ejecución".equals(b.getEstado())) {
                     g2.setColor(Tema.TEXTO);
                     g2.setStroke(new BasicStroke(2f));
                     g2.drawRoundRect(x + 1, y + 1, w - 3, alto - 3, 10, 10);
                     g2.setStroke(new BasicStroke(1f));
-                    yPCBloque = y;
-                    altoPCBloque = alto;
+                    CPU activa = gestor.getCpu(b.getCpuId() - 1);
+                    double rel = (activa.getPC() - b.getDireccionBase() + 0.5) / Math.max(1, b.getTamanioProceso());
+                    int yPC = y + (int) Math.round(Math.max(0, Math.min(1, rel)) * alto);
+                    int xf = x + w + 2;
+                    g2.setColor(Tema.ROJO);
+                    g2.fillPolygon(new int[]{xf, xf + 10, xf + 10}, new int[]{yPC, yPC - 5, yPC + 5}, 3);
                 }
                 g2.setColor(Color.WHITE);
                 g2.setFont(Tema.PEQUENA_B);
@@ -1855,16 +1951,6 @@ public class VentanaPrincipal extends JFrame {
                     ultimaEtiqueta = y;
                 }
                 finAnterior = y + alto + 2;
-            }
-
-            // Flecha del PC
-            if (enCpu != null && yPCBloque >= 0) {
-                int pc = gestor.getCpu().getPC();
-                double rel = (pc - enCpu.getDireccionBase() + 0.5) / Math.max(1, enCpu.getTamanioProceso());
-                int yPC = yPCBloque + (int) Math.round(Math.max(0, Math.min(1, rel)) * altoPCBloque);
-                int xf = x + w + 2;
-                g2.setColor(Tema.ROJO);
-                g2.fillPolygon(new int[]{xf, xf + 10, xf + 10}, new int[]{yPC, yPC - 6, yPC + 6}, 3);
             }
 
             etiquetaDireccion(g2, total - 1, arriba + h - 10);
