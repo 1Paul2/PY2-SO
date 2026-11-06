@@ -145,7 +145,7 @@ public class ConfiguracionSistema {
             throw new IllegalArgumentException("La cantidad de CPU debe estar entre 1 y 5");
     }
     private static void validarAlgoritmoCpu(String algoritmo){
-        if (!"FCFS".equals(algoritmo) && !"SRT".equals(algoritmo))
+        if (!"FCFS".equals(algoritmo) && !"SRT".equals(algoritmo) && !"SPN".equals(algoritmo))
             throw new IllegalArgumentException("Algoritmo de CPU inválido: " + algoritmo);
     }
     public String getAlgoritmoCpu(){ return algoritmoCpu; }

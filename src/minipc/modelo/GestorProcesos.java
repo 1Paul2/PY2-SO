@@ -72,6 +72,8 @@ public class GestorProcesos {
         this(c.getMemoriaPrincipal(), c.getMemoriaSistema(), c.getAlmacenamientoSecundario(), c.getMemoriaVirtual(), c.getCantidadCpus());
         if ("SRT".equals(c.getAlgoritmoCpu())) {
             planificador.setAlgoritmo(new minipc.modelo.algoritmos.SRT());
+        } else if ("SPN".equals(c.getAlgoritmoCpu())) {
+            planificador.setAlgoritmo(new minipc.modelo.algoritmos.SPN());
         }
     }
 

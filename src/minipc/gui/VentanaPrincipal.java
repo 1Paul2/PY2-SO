@@ -1204,7 +1204,7 @@ public class VentanaPrincipal extends JFrame {
         campos.setOpaque(false);
         JSpinner cantidadCpus = new JSpinner(new SpinnerNumberModel(configuracion.getCantidadCpus(), 1, GestorProcesos.MAX_CPUS, 1));
         campos.add(etiqueta("Cantidad de CPU (1 a 5)")); campos.add(cantidadCpus);
-        JComboBox<String> algoritmoCpu = new JComboBox<>(new String[]{"FCFS", "SRT"});
+        JComboBox<String> algoritmoCpu = new JComboBox<>(new String[]{"FCFS", "SRT", "SPN"});
         algoritmoCpu.setSelectedItem(configuracion.getAlgoritmoCpu());
         campos.add(etiqueta("Algoritmo de CPU")); campos.add(algoritmoCpu);
         JTextField mp = campo(configuracion.getMemoriaPrincipal());
