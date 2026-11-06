@@ -74,6 +74,8 @@ public class GestorProcesos {
             planificador.setAlgoritmo(new minipc.modelo.algoritmos.SRT());
         } else if ("SPN".equals(c.getAlgoritmoCpu())) {
             planificador.setAlgoritmo(new minipc.modelo.algoritmos.SPN());
+        } else if ("RR".equals(c.getAlgoritmoCpu())) {
+            planificador.setAlgoritmo(new minipc.modelo.algoritmos.RoundRobin(c.getQuantumRR()));
         }
     }
 

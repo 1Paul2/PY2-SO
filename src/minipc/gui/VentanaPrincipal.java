@@ -1200,13 +1200,17 @@ public class VentanaPrincipal extends JFrame {
         }
         JDialog dlg = new JDialog(this, "Configuración del Mini PC", true);
         Tarjeta t = new Tarjeta("Tamaños (se guardan en " + ConfiguracionSistema.ARCHIVO_POR_DEFECTO + ")", Tema.VERDE);
-        JPanel campos = new JPanel(new GridLayout(6, 2, 10, 10));
+        JPanel campos = new JPanel(new GridLayout(7, 2, 10, 10));
         campos.setOpaque(false);
         JSpinner cantidadCpus = new JSpinner(new SpinnerNumberModel(configuracion.getCantidadCpus(), 1, GestorProcesos.MAX_CPUS, 1));
         campos.add(etiqueta("Cantidad de CPU (1 a 5)")); campos.add(cantidadCpus);
-        JComboBox<String> algoritmoCpu = new JComboBox<>(new String[]{"FCFS", "SRT", "SPN"});
+        JComboBox<String> algoritmoCpu = new JComboBox<>(new String[]{"FCFS", "SRT", "SPN", "RR"});
         algoritmoCpu.setSelectedItem(configuracion.getAlgoritmoCpu());
         campos.add(etiqueta("Algoritmo de CPU")); campos.add(algoritmoCpu);
+        JSpinner quantumRR = new JSpinner(new SpinnerNumberModel(configuracion.getQuantumRR(), 1, Integer.MAX_VALUE, 1));
+        quantumRR.setEnabled("RR".equals(algoritmoCpu.getSelectedItem()));
+        algoritmoCpu.addActionListener(e -> quantumRR.setEnabled("RR".equals(algoritmoCpu.getSelectedItem())));
+        campos.add(etiqueta("Quantum de RR (s)")); campos.add(quantumRR);
         JTextField mp = campo(configuracion.getMemoriaPrincipal());
         JTextField ms = campo(configuracion.getMemoriaSistema());
         JTextField as = campo(configuracion.getAlmacenamientoSecundario());
@@ -1237,6 +1241,7 @@ public class VentanaPrincipal extends JFrame {
                     configuracion.cargarDesdeArchivo(sel.getSelectedFile());
                     cantidadCpus.setValue(configuracion.getCantidadCpus());
                     algoritmoCpu.setSelectedItem(configuracion.getAlgoritmoCpu());
+                    quantumRR.setValue(configuracion.getQuantumRR());
                     mp.setText(String.valueOf(configuracion.getMemoriaPrincipal()));
                     ms.setText(String.valueOf(configuracion.getMemoriaSistema()));
                     as.setText(String.valueOf(configuracion.getAlmacenamientoSecundario()));
@@ -1250,11 +1255,13 @@ public class VentanaPrincipal extends JFrame {
         aplicar.addActionListener(e -> {
             try {
                 cantidadCpus.commitEdit();
+                if (quantumRR.isEnabled()) quantumRR.commitEdit();
                 configuracion.setTamanos(
                     Integer.parseInt(mp.getText().trim()), Integer.parseInt(ms.getText().trim()),
                     Integer.parseInt(as.getText().trim()), Integer.parseInt(mv.getText().trim()));
                 configuracion.setCantidadCpus(((Number) cantidadCpus.getValue()).intValue());
                 configuracion.setAlgoritmoCpu((String) algoritmoCpu.getSelectedItem());
+                configuracion.setQuantumRR((Integer) quantumRR.getValue());
                 configuracion.guardarEnArchivo(new File(ConfiguracionSistema.ARCHIVO_POR_DEFECTO));
             } catch (NumberFormatException ex) {
                 JOptionPane.showMessageDialog(dlg, "Los cuatro tamaños deben ser números enteros.", "Error", JOptionPane.ERROR_MESSAGE);

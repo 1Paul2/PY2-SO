@@ -49,6 +49,7 @@ public class ConfiguracionSistema {
     private int memoriaVirtual = MEMORIA_VIRTUAL_DEF;
     private int cantidadCpus = 1;
     private String algoritmoCpu = "FCFS";
+    private int quantumRR = 2;
 
     // E: no aplica
     // S: no aplica (constructor)
@@ -84,9 +85,12 @@ public class ConfiguracionSistema {
         int cpus = leerEntero(p, "cantidadCpus", 1);
         String algoritmo = p.getProperty("algoritmoCpu", "FCFS").trim();
         validarAlgoritmoCpu(algoritmo);
+        int quantum = leerEntero(p, "quantumRR", 2);
+        validarQuantumRR(quantum);
         validarCantidadCpus(cpus);
         setTamanos(mp, ms, as, mv);
         cantidadCpus = cpus;
+        quantumRR = quantum;
         algoritmoCpu = algoritmo;
     }
 
@@ -101,6 +105,7 @@ public class ConfiguracionSistema {
         p.setProperty("memoriaVirtual", String.valueOf(memoriaVirtual));
         p.setProperty("cantidadCpus", String.valueOf(cantidadCpus));
         p.setProperty("algoritmoCpu", algoritmoCpu);
+        p.setProperty("quantumRR", String.valueOf(quantumRR));
         try (FileWriter escritor = new FileWriter(archivo)) {
             p.store(escritor, "Configuracion del Mini PC");
         }
@@ -145,13 +150,22 @@ public class ConfiguracionSistema {
             throw new IllegalArgumentException("La cantidad de CPU debe estar entre 1 y 5");
     }
     private static void validarAlgoritmoCpu(String algoritmo){
-        if (!"FCFS".equals(algoritmo) && !"SRT".equals(algoritmo) && !"SPN".equals(algoritmo))
+        if (!"FCFS".equals(algoritmo) && !"SRT".equals(algoritmo) && !"SPN".equals(algoritmo) && !"RR".equals(algoritmo))
             throw new IllegalArgumentException("Algoritmo de CPU inválido: " + algoritmo);
     }
     public String getAlgoritmoCpu(){ return algoritmoCpu; }
     public void setAlgoritmoCpu(String algoritmo){
         validarAlgoritmoCpu(algoritmo);
         algoritmoCpu = algoritmo;
+    }
+
+    private static void validarQuantumRR(int quantum){
+        if (quantum < 1) throw new IllegalArgumentException("El quantum debe ser positivo");
+    }
+    public int getQuantumRR(){ return quantumRR; }
+    public void setQuantumRR(int quantum){
+        validarQuantumRR(quantum);
+        quantumRR = quantum;
     }
 
     public int getCantidadCpus(){ return cantidadCpus; }
