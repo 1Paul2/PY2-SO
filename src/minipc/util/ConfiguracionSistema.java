@@ -48,6 +48,10 @@ public class ConfiguracionSistema {
     private int almacenamientoSecundario = ALMACENAMIENTO_DEF;
     private int memoriaVirtual = MEMORIA_VIRTUAL_DEF;
     private int cantidadCpus = 1;
+    private String algoritmoCpu = "FCFS";
+    private int quantumRR = 2;
+    private int nivelesMLFQ = 3;
+    private int periodoBoostMLFQ = 20;
 
     // E: no aplica
     // S: no aplica (constructor)
@@ -81,9 +85,20 @@ public class ConfiguracionSistema {
         int as = leerEntero(p, "almacenamientoSecundario", almacenamientoSecundario);
         int mv = leerEntero(p, "memoriaVirtual", memoriaVirtual);
         int cpus = leerEntero(p, "cantidadCpus", 1);
+        String algoritmo = p.getProperty("algoritmoCpu", "FCFS").trim();
+        validarAlgoritmoCpu(algoritmo);
+        int quantum = leerEntero(p, "quantumRR", 2);
+        validarQuantumRR(quantum);
+        int niveles = leerEntero(p, "nivelesMLFQ", 3);
+        int boost = leerEntero(p, "periodoBoostMLFQ", 20);
+        validarMLFQ(niveles, boost);
         validarCantidadCpus(cpus);
         setTamanos(mp, ms, as, mv);
         cantidadCpus = cpus;
+        quantumRR = quantum;
+        nivelesMLFQ = niveles;
+        periodoBoostMLFQ = boost;
+        algoritmoCpu = algoritmo;
     }
 
     // E: archivo (File) - destino
@@ -96,6 +111,10 @@ public class ConfiguracionSistema {
         p.setProperty("almacenamientoSecundario", String.valueOf(almacenamientoSecundario));
         p.setProperty("memoriaVirtual", String.valueOf(memoriaVirtual));
         p.setProperty("cantidadCpus", String.valueOf(cantidadCpus));
+        p.setProperty("algoritmoCpu", algoritmoCpu);
+        p.setProperty("quantumRR", String.valueOf(quantumRR));
+        p.setProperty("nivelesMLFQ", String.valueOf(nivelesMLFQ));
+        p.setProperty("periodoBoostMLFQ", String.valueOf(periodoBoostMLFQ));
         try (FileWriter escritor = new FileWriter(archivo)) {
             p.store(escritor, "Configuracion del Mini PC");
         }
@@ -139,6 +158,38 @@ public class ConfiguracionSistema {
         if (cantidad < 1 || cantidad > 5)
             throw new IllegalArgumentException("La cantidad de CPU debe estar entre 1 y 5");
     }
+    private static void validarAlgoritmoCpu(String algoritmo){
+        if (!"FCFS".equals(algoritmo) && !"SRT".equals(algoritmo) && !"SPN".equals(algoritmo) && !"RR".equals(algoritmo) && !"HRRN".equals(algoritmo) && !"SRR".equals(algoritmo) && !"Lottery".equals(algoritmo) && !"Prioridad".equals(algoritmo)
+            && !"Guaranteed".equals(algoritmo) && !"MLFQ".equals(algoritmo))
+            throw new IllegalArgumentException("Algoritmo de CPU inválido: " + algoritmo);
+    }
+    public String getAlgoritmoCpu(){ return algoritmoCpu; }
+    public void setAlgoritmoCpu(String algoritmo){
+        validarAlgoritmoCpu(algoritmo);
+        algoritmoCpu = algoritmo;
+    }
+
+    private static void validarQuantumRR(int quantum){
+        if (quantum < 1) throw new IllegalArgumentException("El quantum debe ser positivo");
+    }
+    public int getQuantumRR(){ return quantumRR; }
+    public void setQuantumRR(int quantum){
+        validarQuantumRR(quantum);
+        quantumRR = quantum;
+    }
+
+    private static void validarMLFQ(int niveles, int boost){
+        if (niveles < 2 || niveles > 8 || boost < 1)
+            throw new IllegalArgumentException("MLFQ requiere 2 a 8 niveles y promoción positiva");
+    }
+    public int getNivelesMLFQ(){ return nivelesMLFQ; }
+    public int getPeriodoBoostMLFQ(){ return periodoBoostMLFQ; }
+    public void setParametrosMLFQ(int niveles, int boost){
+        validarMLFQ(niveles, boost);
+        nivelesMLFQ = niveles;
+        periodoBoostMLFQ = boost;
+    }
+
     public int getCantidadCpus(){ return cantidadCpus; }
     public void setCantidadCpus(int cantidad){
         validarCantidadCpus(cantidad);

@@ -218,7 +218,11 @@ public class Planificador {
     // S: BCP - el proceso que eligió el algoritmo (ya fuera de la cola), o null si no hay
     // R: ninguna
     public BCP siguienteProceso(){
-        return algoritmo.seleccionar(listaProcesos);
+        return siguienteProceso(0);
+    }
+
+    public BCP siguienteProceso(int reloj){
+        return algoritmo.seleccionar(listaProcesos, reloj);
     }
 
     // Correccion - Poll (observación PY1): punto de expropiación para algoritmos como RR o SRT
