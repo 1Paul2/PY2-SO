@@ -1204,13 +1204,13 @@ public class VentanaPrincipal extends JFrame {
         campos.setOpaque(false);
         JSpinner cantidadCpus = new JSpinner(new SpinnerNumberModel(configuracion.getCantidadCpus(), 1, GestorProcesos.MAX_CPUS, 1));
         campos.add(etiqueta("Cantidad de CPU (1 a 5)")); campos.add(cantidadCpus);
-        JComboBox<String> algoritmoCpu = new JComboBox<>(new String[]{"FCFS", "SRT", "SPN", "RR"});
+        JComboBox<String> algoritmoCpu = new JComboBox<>(new String[]{"FCFS", "SRT", "SPN", "RR", "HRRN", "SRR"});
         algoritmoCpu.setSelectedItem(configuracion.getAlgoritmoCpu());
         campos.add(etiqueta("Algoritmo de CPU")); campos.add(algoritmoCpu);
         JSpinner quantumRR = new JSpinner(new SpinnerNumberModel(configuracion.getQuantumRR(), 1, Integer.MAX_VALUE, 1));
-        quantumRR.setEnabled("RR".equals(algoritmoCpu.getSelectedItem()));
-        algoritmoCpu.addActionListener(e -> quantumRR.setEnabled("RR".equals(algoritmoCpu.getSelectedItem())));
-        campos.add(etiqueta("Quantum de RR (s)")); campos.add(quantumRR);
+        quantumRR.setEnabled(("RR".equals(algoritmoCpu.getSelectedItem()) || "SRR".equals(algoritmoCpu.getSelectedItem())));
+        algoritmoCpu.addActionListener(e -> quantumRR.setEnabled(("RR".equals(algoritmoCpu.getSelectedItem()) || "SRR".equals(algoritmoCpu.getSelectedItem()))));
+        campos.add(etiqueta("Quantum de RR / SRR (s)")); campos.add(quantumRR);
         JTextField mp = campo(configuracion.getMemoriaPrincipal());
         JTextField ms = campo(configuracion.getMemoriaSistema());
         JTextField as = campo(configuracion.getAlmacenamientoSecundario());

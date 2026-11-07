@@ -34,6 +34,10 @@ public interface AlgoritmoPlanificacion {
     // R: debe sacar de la cola el proceso que devuelve
     BCP seleccionar(ColaTrabajo preparados);
 
+    default BCP seleccionar(ColaTrabajo preparados, int reloj){
+        return seleccionar(preparados);
+    }
+
     // E: enEjecucion (BCP) - proceso en la CPU; segundosEnCPU (int) - segundos seguidos que lleva
     //    en la CPU desde que fue despachado; preparados (ColaTrabajo) - procesos esperando la CPU
     // S: boolean - true si el proceso debe salir de la CPU y volver a la cola de preparados
@@ -42,6 +46,8 @@ public interface AlgoritmoPlanificacion {
     default java.util.List<Integer> reequilibrar(java.util.List<BCP> ocupacion, ColaTrabajo preparados){
         return java.util.List.of();
     }
+
+    default void actualizarAdmisiones(java.util.List<BCP> ocupacion, ColaTrabajo preparados, int reloj){}
 
     default boolean debeExpropiar(BCP enEjecucion, int segundosEnCPU, ColaTrabajo preparados){
         return false;

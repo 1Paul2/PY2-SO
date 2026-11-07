@@ -76,6 +76,10 @@ public class GestorProcesos {
             planificador.setAlgoritmo(new minipc.modelo.algoritmos.SPN());
         } else if ("RR".equals(c.getAlgoritmoCpu())) {
             planificador.setAlgoritmo(new minipc.modelo.algoritmos.RoundRobin(c.getQuantumRR()));
+        } else if ("HRRN".equals(c.getAlgoritmoCpu())) {
+            planificador.setAlgoritmo(new minipc.modelo.algoritmos.HRRN());
+        } else if ("SRR".equals(c.getAlgoritmoCpu())) {
+            planificador.setAlgoritmo(new minipc.modelo.algoritmos.SelfishRoundRobin(c.getQuantumRR()));
         }
     }
 
@@ -196,6 +200,7 @@ public class GestorProcesos {
                 finalizar(i, errores[i]);
         }
         admitirLlegadas();
+        actualizarAdmisionesCpu();
         // Las nuevas llegadas son visibles antes de evaluar expropiación/quantum.
         for (int i = 0; i < cpus.size(); i++) {
             BCP actual = cpus.get(i).getBcpActual();
@@ -241,7 +246,14 @@ public class GestorProcesos {
             + " tras " + segundosEnCPU[indice] + " s");
     }
 
+    private void actualizarAdmisionesCpu(){
+        List<BCP> ocupacion = new ArrayList<>();
+        for (CPU cpu : cpus) ocupacion.add(cpu.getBcpActual());
+        planificador.getAlgoritmo().actualizarAdmisiones(ocupacion, planificador.getListaProcesos(), reloj);
+    }
+
     private void despacharLibres(){
+        actualizarAdmisionesCpu();
         List<BCP> ocupacion = new ArrayList<>();
         for (CPU cpu : cpus) ocupacion.add(cpu.getBcpActual());
         for (int indice : planificador.getAlgoritmo().reequilibrar(ocupacion, planificador.getListaProcesos())) {
@@ -251,7 +263,7 @@ public class GestorProcesos {
         mostrarMensajesSO();
         for (int i = 0; i < cpus.size(); i++) {
             if (cpus.get(i).getBcpActual() != null) continue;
-            BCP siguiente = planificador.siguienteProceso();
+            BCP siguiente = planificador.siguienteProceso(reloj);
             if (siguiente == null) break;
             segundosEnCPU[i] = 0;
             if (siguiente.getTiempoInicio() < 0) siguiente.setTiempoInicio(reloj);
