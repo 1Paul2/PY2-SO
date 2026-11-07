@@ -28,6 +28,7 @@ public class GestorProcesos {
     private final List<Despachador> despachadores = new ArrayList<>();
     private final List<String> pantalla = new ArrayList<>();
     private Memoria memoria;
+    private minipc.hardware.GestorMemoria gestorMemoria;
     private Disco disco;
     private Planificador planificador;
     private int siguienteIdProceso;
@@ -50,15 +51,22 @@ public class GestorProcesos {
 
     public GestorProcesos(int tamanoMemoria, int tamanoSistema, int tamanoDisco,
                          int tamanoVirtual, int cantidadCpus) {
+        this(tamanoMemoria, tamanoSistema, tamanoDisco, tamanoVirtual, cantidadCpus, null);
+    }
+
+    private GestorProcesos(int tamanoMemoria, int tamanoSistema, int tamanoDisco,
+                         int tamanoVirtual, int cantidadCpus, ConfiguracionSistema configuracion) {
         if (cantidadCpus < 1 || cantidadCpus > MAX_CPUS)
             throw new IllegalArgumentException("La cantidad de CPU debe estar entre 1 y 5");
         this.memoria = new Memoria(tamanoMemoria, tamanoSistema);
         this.disco = new Disco(tamanoDisco, tamanoVirtual);
-        this.planificador = new Planificador(memoria, disco, cantidadCpus);
+        this.gestorMemoria = new minipc.hardware.GestorMemoria(memoria, disco, configuracion);
+        this.planificador = new Planificador(memoria, disco, cantidadCpus, gestorMemoria);
         this.segundosEnCPU = new int[cantidadCpus];
         for (int i = 0; i < cantidadCpus; i++) {
             CPU cpu = new CPU(memoria, pantalla);
             cpu.setDisco(disco);
+            cpu.setGestorMemoria(gestorMemoria);
             cpus.add(cpu);
             despachadores.add(new Despachador(cpu));
         }
@@ -69,7 +77,7 @@ public class GestorProcesos {
     }
 
     public GestorProcesos(ConfiguracionSistema c) {
-        this(c.getMemoriaPrincipal(), c.getMemoriaSistema(), c.getAlmacenamientoSecundario(), c.getMemoriaVirtual(), c.getCantidadCpus());
+        this(c.getMemoriaPrincipal(), c.getMemoriaSistema(), c.getAlmacenamientoSecundario(), c.getMemoriaVirtual(), c.getCantidadCpus(), c);
         if ("SRT".equals(c.getAlgoritmoCpu())) {
             planificador.setAlgoritmo(new minipc.modelo.algoritmos.SRT());
         } else if ("SPN".equals(c.getAlgoritmoCpu())) {
@@ -94,8 +102,7 @@ public class GestorProcesos {
 
     // ===================== Carga de programas =====================
 
-    // Correccion - Poll: el límite ya no suma la memoria virtual; el programa debe caber en la
-    // memoria de usuario (la memoria virtual se rehace con paginación)
+    // La capacidad máxima depende de las particiones o marcos de la estrategia.
     // E: instrucciones (List<Instruccion>) - programa ya validado; nombreArchivo (String)
     // S: BCP - el proceso creado
     // R: lanza RuntimeException si el programa no cabe en memoria o no hay espacio en disco
@@ -110,11 +117,11 @@ public class GestorProcesos {
     //    vacías, y como cada instrucción dura 1 s también es el tiempo de CPU que necesita
     public BCP cargarPrograma(List<Instruccion> instrucciones, String nombreArchivo, int llegada){
         if (llegada < reloj) throw new IllegalArgumentException("La llegada no puede ser anterior al reloj actual (" + reloj + ")");
-        int espacioUsuario = memoria.getTamanoTotal() - memoria.getInicioUsuario();
+        int espacioUsuario = gestorMemoria.getMaximoPrograma();
         if (instrucciones.size() > espacioUsuario) {
-            // Desbordamiento de memoria: el programa es más grande que toda la memoria de usuario
+            // El programa nunca podrá admitirse con la capacidad de esta estrategia.
             throw new RuntimeException("Desbordamiento de memoria: " + nombreArchivo + " ocupa "
-                + instrucciones.size() + " posiciones y la memoria de usuario tiene " + espacioUsuario);
+                + instrucciones.size() + " posiciones y el máximo con " + gestorMemoria.getEstrategia() + " es " + espacioUsuario);
         }
 
         List<String> lineas = new ArrayList<>();
@@ -385,6 +392,7 @@ public class GestorProcesos {
     public void imprimir(String texto) { pantalla.add(texto); }
     public List<String> getPantalla() { return java.util.Collections.unmodifiableList(pantalla); }
     public Memoria getMemoria() { return memoria; }
+    public minipc.hardware.GestorMemoria getGestorMemoria(){ return gestorMemoria; }
     public Disco getDisco() { return disco; }
     public Planificador getPlanificador() { return planificador; }
     public Despachador getDespachador() { return despachadores.get(0); }

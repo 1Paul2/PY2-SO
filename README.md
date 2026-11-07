@@ -444,3 +444,46 @@ Las pruebas cubren las cantidades 1-5, reloj compartido, registros independiente
 errores, pantalla compartida, persistencia y migración por expropiación. La prueba
 usa un algoritmo RR de ejemplo interno; los algoritmos nuevos de producción y las
 estadísticas acumuladas siguen siendo tareas independientes.
+
+## Proyecto 2: asignación de memoria
+
+En Configuración, la pestaña **Asignación de memoria** permite seleccionar
+First Fit, Next Fit, Best Fit, particiones fijas iguales, particiones fijas
+diferentes, paginación física o paginación virtual. Los tamaños de RAM, zona
+del S.O., disco y memoria virtual siguen en **CPU y tamaños**.
+
+Los parámetros usan posiciones de memoria, con una instrucción por posición.
+Las particiones iguales tienen tamaño fijo. Las diferentes se ingresan como
+una lista separada por comas y su suma debe caber en la zona de usuario.
+El espacio restante que no forma una partición o marco completo queda sin
+asignar. Las reservas incluyen la fragmentación interna y se liberan completas.
+
+En paginación, cada proceso tiene direcciones lógicas desde cero. La tabla
+de páginas muestra las bases de los marcos físicos o bloques de respaldo.
+La CPU traduce cada instrucción sin cambiar los desplazamientos de los saltos.
+Paginación física requiere todos los marcos en RAM. Paginación virtual permite
+guardar páginas en disco y reemplaza la más antigua en RAM mediante FIFO al
+acceder a una página ausente. Los fallos se cuentan y se resuelven dentro del
+paso actual, conservando la duración de un segundo por instrucción.
+
+La vista **RAM física** muestra las reservas, los BCP y el PC traducido de la
+CPU seleccionada. El mapa marca los PC residentes de todas las CPU. La pestaña
+**Tabla de páginas** y la tabla de disco permiten identificar las páginas de
+cada proceso. Los recursos muestran las posiciones físicas reservadas.
+
+El archivo config.txt conserva la selección mediante estrategiaMemoria,
+tamanoPagina, tamanoParticion y particiones. Los archivos anteriores usan
+First Fit. Por defecto, las páginas tienen 8 posiciones, las particiones
+iguales 32 y la lista de tamaños diferentes es 16,32,64. Estos parámetros
+se aplican al crear una nueva simulación.
+
+La prueba tests/PruebaMemoria.java comprueba huecos, cursor circular, particiones,
+fragmentación, marcos no contiguos, intercambio FIFO, liberación tras errores,
+persistencia y 350 combinaciones de las siete estrategias, diez algoritmos
+de CPU y cantidades de una a cinco CPU.
+
+~~~powershell
+$fuentes = @(Get-ChildItem src -Recurse -Filter *.java | ForEach-Object FullName)
+javac -encoding UTF-8 -d build/classes $fuentes tests/PruebaMemoria.java
+java -cp build/classes PruebaMemoria
+~~~

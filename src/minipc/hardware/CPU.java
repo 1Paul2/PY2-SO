@@ -17,6 +17,7 @@ public class CPU {
     private int AL;               // dato que se lee o escribe con INT 21H
     private String DXTexto;       // nombre de archivo cargado en DX con MOV DX, "archivo.txt"
     private Memoria memoria;
+    private GestorMemoria gestorMemoria;
     private Disco disco;          // para leer la parte del programa que está en memoria virtual
     private BCP bcpActual;
     private boolean flagIgual;
@@ -98,13 +99,14 @@ public class CPU {
     }
 
     public void setDisco(Disco disco){ this.disco = disco; }
+    public void setGestorMemoria(GestorMemoria gestor){ this.gestorMemoria = gestor; }
 
-    // Correccion - Poll: se quita la lectura desde la memoria virtual del disco; el programa
-    // completo está en memoria principal (la memoria virtual se rehace con paginación)
+    // El gestor traduce el desplazamiento a RAM y resuelve fallos de página si corresponde.
     // Lee la instrucción apuntada por el PC, validando que esté dentro del proceso.
     public void fetch(){
         memoria.validarAcceso(PC, bcpActual.getDireccionBase(), bcpActual.getTamanioProceso());
-        IR = memoria.leer(PC);
+        IR = gestorMemoria == null ? memoria.leer(PC)
+            : gestorMemoria.leerInstruccion(bcpActual, PC - bcpActual.getDireccionBase());
         PC = PC + 1;
     }
 

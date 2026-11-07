@@ -30,6 +30,7 @@ public class Planificador {
     private ColaTrabajo listaFinalizados;  // Finalizado
 
     private Memoria memoria;
+    private final minipc.hardware.GestorMemoria gestorMemoria;
     private Disco disco;
 
     // Bloques de la zona del S.O. donde se guardan los BCP: el bloque i empieza en la
@@ -64,6 +65,11 @@ public class Planificador {
     }
 
     public Planificador(Memoria memoria, Disco disco, int cantidadCpus) {
+        this(memoria, disco, cantidadCpus, new minipc.hardware.GestorMemoria(memoria, disco, null));
+    }
+
+    public Planificador(Memoria memoria, Disco disco, int cantidadCpus, minipc.hardware.GestorMemoria gestorMemoria) {
+        this.gestorMemoria = gestorMemoria;
         if (cantidadCpus < 1 || cantidadCpus > GestorProcesos.MAX_CPUS)
             throw new IllegalArgumentException("La cantidad de CPU debe estar entre 1 y 5");
         this.maxProcesosEnMemoria = MAX_PROCESOS_EN_MEMORIA * cantidadCpus;
@@ -122,26 +128,19 @@ public class Planificador {
         }
     }
 
-    // Correccion - Poll: se quita el reparto "mitad en RAM, mitad en memoria virtual"; si el
-    // programa no cabe completo en un hueco de RAM, espera en la lista de trabajos
+    // Si no puede reservarse el programa completo, permanece en la lista de trabajos.
     // E: bcp (BCP) - primer trabajo de la lista de trabajos
     // S: boolean - true si se pudo cargar en memoria (y pasó a la lista de procesos)
-    // R: el programa debe caber completo en un hueco contiguo de la zona de usuario
+    // R: el gestor de memoria reserva según la estrategia seleccionada
     // Correccion - Poll (observación PY1): el BCP recibe la dirección donde empieza su bloque
     // (bloque * BCP.TAMANO_BLOQUE), no un índice de una sola posición
     private boolean intentarCargar(BCP bcp){
         int slot = slotLibre();
         if (slot == -1) return false;                        // no hay espacio para su BCP
 
-        int tamano = bcp.getTamanioProceso();
-        int hueco = memoria.encontrarHueco(tamano);
-        if (hueco == -1) return false;                       // no cabe: espera a que se libere memoria
-
         List<String> lineas = disco.leerArchivo(bcp.getArchivosAbiertos().get(0));
-        for (int i = 0; i < tamano; i++) {
-            memoria.escribir(hueco + i, lineas.get(i));
-        }
-        bcp.setDireccionBase(hueco);
+        if (!gestorMemoria.cargar(bcp, lineas)) return false;
+        int hueco = bcp.getDireccionBase();
 
         if (bcp.getDesplazamientoPC() >= 0) {
             // Proceso que estaba suspendido: se reubica y continúa donde iba
@@ -179,13 +178,11 @@ public class Planificador {
         return false;
     }
 
-    // Correccion - Poll: ya no libera memoria virtual; el programa ocupa solo RAM (base + alcance)
+    // Libera la reserva completa, incluidos marcos y respaldo virtual.
     // Correccion - Poll (observación PY1): libera el bloque completo del BCP (TAMANO_BLOQUE posiciones)
     // Libera la RAM y el bloque del BCP de un proceso
     private void liberarMemoria(BCP bcp){
-        if (bcp.getDireccionBase() >= 0) {
-            memoria.liberar(bcp.getDireccionBase(), bcp.getTamanioProceso());
-        }
+        gestorMemoria.liberar(bcp);
         if (bcp.getDireccionBCP() >= 0) {
             memoria.liberar(bcp.getDireccionBCP(), BCP.TAMANO_BLOQUE);
             slotsBCP[bcp.getDireccionBCP() / BCP.TAMANO_BLOQUE] = false;

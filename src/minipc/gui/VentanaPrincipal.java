@@ -36,6 +36,8 @@ import minipc.gui.VentanaPrincipal.Componentes.Tarjeta;
 import minipc.hardware.CPU;
 import minipc.hardware.Disco;
 import minipc.hardware.Memoria;
+import minipc.hardware.EstrategiaMemoria;
+import minipc.hardware.GestorMemoria;
 import minipc.modelo.BCP;
 import minipc.modelo.GestorProcesos;
 import minipc.modelo.Instruccion;
@@ -79,6 +81,7 @@ public class VentanaPrincipal extends JFrame {
     private MapaMemoria mapaMemoria;
     private DefaultTableModel modeloMemoria;
     private JTable tablaMemoria;
+    private DefaultTableModel modeloPaginas;
     private String[] duenoPosicion = new String[0];   // "S.O.", "P1"  por posición
     private int posicionPC = -1;
 
@@ -424,7 +427,15 @@ public class VentanaPrincipal extends JFrame {
         split.setBorder(null);
         split.setOpaque(false);
         split.setDividerSize(8);
-        tarjetaMemoria.getContenido().add(split, BorderLayout.CENTER);
+        modeloPaginas = new DefaultTableModel(new String[]{"Proceso", "Página", "Base RAM", "Base disco"}, 0) {
+            @Override public boolean isCellEditable(int r, int c){ return false; }
+        };
+        JTable tablaPaginas = new JTable(modeloPaginas);
+        Componentes.estilizarTabla(tablaPaginas);
+        JTabbedPane vistasMemoria = new JTabbedPane();
+        vistasMemoria.addTab("RAM física", split);
+        vistasMemoria.addTab("Tabla de páginas", Componentes.scroll(tablaPaginas));
+        tarjetaMemoria.getContenido().add(vistasMemoria, BorderLayout.CENTER);
 
         // Pantalla
         Tarjeta pantalla = new Tarjeta("Pantalla", new Color(0x0F766E));
@@ -924,10 +935,11 @@ public class VentanaPrincipal extends JFrame {
         for (BCP b : gestor.getTodosLosProcesos()) {
             String e = b.getEstado();
             if (!"Nuevo".equals(e) && !b.estaFinalizado()) {
-                usuarioUsado += b.getTamanioProceso();
+                // La reserva física puede incluir fragmentación o solo algunas páginas.
                 if (b.getDireccionBCP() >= 0) bcps++;
             }
         }
+        usuarioUsado = gestor.getGestorMemoria().getReservadoRam();
         int discoUsado = 0, archivos = 0;
         for (int i = 0; i < d.getTamanoTotal(); i++) {
             String v = d.leer(i);
@@ -1014,7 +1026,8 @@ public class VentanaPrincipal extends JFrame {
         }
         valoresBCP[0].setText("P" + b.getIdProceso());
         distEstadoBCP.setEstado(b.getEstado());
-        valoresBCP[2].setText(String.valueOf(b.getDireccionBase()));
+        valoresBCP[2].setText(gestor.getGestorMemoria().getEstrategia().esPaginada()
+            ? "0 (lógica)" : String.valueOf(b.getDireccionBase()));
         valoresBCP[3].setText(b.getTamanioProceso() + " posiciones");
         valoresBCP[4].setText(String.valueOf(b.getPrioridad()));
         valoresBCP[5].setText("CPU " + b.getCpuId());
@@ -1034,7 +1047,9 @@ public class VentanaPrincipal extends JFrame {
     private void actualizarMemoria(){
         mapaMemoria.setGestor(gestor);
         int total = gestor == null ? configuracion.getMemoriaPrincipal() : gestor.getMemoria().getTamanoTotal();
-        tarjetaMemoria.setExtra(total + " posiciones");
+        tarjetaMemoria.setExtra(gestor == null ? configuracion.getEstrategiaMemoria().toString()
+            : gestor.getGestorMemoria().getEstrategia() + " · fallos " + gestor.getGestorMemoria().getFallosPagina());
+        modeloPaginas.setRowCount(0);
         if (gestor == null) {
             modeloMemoria.setRowCount(0);
             duenoPosicion = new String[0];
@@ -1047,9 +1062,6 @@ public class VentanaPrincipal extends JFrame {
         for (BCP b : gestor.getTodosLosProcesos()) {
             String e = b.getEstado();
             if ("Nuevo".equals(e) || b.estaFinalizado() || b.getDireccionBase() < 0) continue;
-            for (int i = b.getDireccionBase(); i < b.getDireccionBase() + b.getTamanioProceso() && i < total; i++) {
-                duenoPosicion[i] = "P" + b.getIdProceso();
-            }
             if (b.getDireccionBCP() >= 0) {
                 for (int k = 0; k < BCP.TAMANO_BLOQUE && b.getDireccionBCP() + k < total; k++) {
                     duenoPosicion[b.getDireccionBCP() + k] = "BCP P" + b.getIdProceso();
@@ -1057,6 +1069,13 @@ public class VentanaPrincipal extends JFrame {
             }
         }
 
+        for (GestorMemoria.Bloque bloque : gestor.getGestorMemoria().getBloquesFisicos()) {
+            for (int i = 0; i < bloque.tamanio(); i++)
+                duenoPosicion[bloque.base() + i] = (i < bloque.instrucciones() ? "P" : "Interna P") + bloque.proceso().getIdProceso();
+        }
+        for (GestorMemoria.Pagina pagina : gestor.getGestorMemoria().getPaginas())
+            modeloPaginas.addRow(new Object[]{"P" + pagina.proceso().getIdProceso(), pagina.numero(),
+                pagina.baseRam() < 0 ? "-" : pagina.baseRam(), pagina.baseDisco() < 0 ? "-" : pagina.baseDisco()});
         if (modeloMemoria.getRowCount() != total) modeloMemoria.setRowCount(total);
         for (int i = 0; i < total; i++) {
             modeloMemoria.setValueAt(i, i, 0);
@@ -1065,7 +1084,10 @@ public class VentanaPrincipal extends JFrame {
         }
 
         BCP actual = cpuSeleccionada().getBcpActual();
-        int nuevoPC = actual == null ? -1 : cpuSeleccionada().getPC();
+        int nuevoPC = actual == null ? -1 : gestor.getGestorMemoria().direccionFisica(
+            actual, cpuSeleccionada().getPC() - actual.getDireccionBase());
+        valoresRegistro[0].setToolTipText(gestor.getGestorMemoria().getEstrategia().esPaginada()
+            ? "PC lógico. La tabla de páginas traduce a RAM o disco." : "Dirección física de la siguiente instrucción");
         if (nuevoPC != posicionPC && nuevoPC >= 0 && nuevoPC < total) {
             tablaMemoria.scrollRectToVisible(tablaMemoria.getCellRect(Math.min(total - 1, nuevoPC + 3), 0, true));
             tablaMemoria.scrollRectToVisible(tablaMemoria.getCellRect(nuevoPC, 0, true));
@@ -1087,11 +1109,19 @@ public class VentanaPrincipal extends JFrame {
         tarjetaDisco.setExtra(total + " · " + d.virtualUsada() + "/" + d.getTamanoMemoriaVirtual() + " virtual");
         if (modeloDisco.getRowCount() != total) modeloDisco.setRowCount(total);
         int inicioVirtual = total - d.getTamanoMemoriaVirtual();
+        String[] duenosVirtuales = new String[total];
+        for (GestorMemoria.Pagina pagina : gestor.getGestorMemoria().getPaginas()) {
+            if (pagina.baseDisco() >= 0) {
+                int tamano = configuracion.getTamanoPagina();
+                for (int k = 0; k < tamano; k++) duenosVirtuales[pagina.baseDisco() + k] = "P"
+                    + pagina.proceso().getIdProceso() + " pág " + pagina.numero();
+            }
+        }
         for (int i = 0; i < total; i++) {
             String zona = i < d.getTamanoIndice() ? "Índice" : (i >= inicioVirtual ? "Virtual" : "Archivos");
             modeloDisco.setValueAt(i, i, 0);
             modeloDisco.setValueAt(d.leer(i), i, 1);
-            modeloDisco.setValueAt(zona, i, 2);
+            modeloDisco.setValueAt(duenosVirtuales[i] == null ? zona : duenosVirtuales[i], i, 2);
         }
         tablaDisco.repaint();
     }
@@ -1246,7 +1276,37 @@ public class VentanaPrincipal extends JFrame {
         campos.add(etiqueta("Zona del S.O."));                   campos.add(ms);
         campos.add(etiqueta("Almacenamiento secundario"));       campos.add(as);
         campos.add(etiqueta("Memoria virtual (en disco)"));      campos.add(mv);
-        t.getContenido().add(campos, BorderLayout.CENTER);
+        JComboBox<EstrategiaMemoria> estrategiaMemoria = new JComboBox<>(EstrategiaMemoria.values());
+        estrategiaMemoria.setSelectedItem(configuracion.getEstrategiaMemoria());
+        JTextField tamanoPagina = campo(configuracion.getTamanoPagina());
+        JTextField tamanoParticion = campo(configuracion.getTamanoParticion());
+        JTextField particiones = new JTextField(configuracion.getListaParticiones());
+        JPanel asignacion = new JPanel(new GridLayout(4, 2, 10, 10));
+        asignacion.setOpaque(false);
+        asignacion.add(etiqueta("Estrategia")); asignacion.add(estrategiaMemoria);
+        asignacion.add(etiqueta("Tamaño de página (posiciones)")); asignacion.add(tamanoPagina);
+        asignacion.add(etiqueta("Tamaño de partición igual")); asignacion.add(tamanoParticion);
+        asignacion.add(etiqueta("Particiones diferentes (ej. 16,32,64)")); asignacion.add(particiones);
+        Runnable habilitarMemoria = () -> {
+            EstrategiaMemoria estrategia = (EstrategiaMemoria) estrategiaMemoria.getSelectedItem();
+            tamanoPagina.setEnabled(estrategia.esPaginada());
+            tamanoParticion.setEnabled(estrategia == EstrategiaMemoria.FIJA_IGUAL);
+            particiones.setEnabled(estrategia == EstrategiaMemoria.FIJA_VARIABLE);
+        };
+        estrategiaMemoria.addActionListener(e -> habilitarMemoria.run());
+        habilitarMemoria.run();
+        JPanel panelAsignacion = new JPanel(new BorderLayout(0, 12));
+        panelAsignacion.setOpaque(false);
+        panelAsignacion.add(asignacion, BorderLayout.NORTH);
+        JLabel nota = etiqueta("<html>Los tamaños usan posiciones de memoria. Cada línea ocupa una posición.<br>"
+            + "Paginación virtual usa FIFO y requiere un marco en RAM.<br>"
+            + "Los restos de páginas y particiones se reservan como fragmentación interna.<br>"
+            + "La zona sobrante que no forma una partición o marco completo queda sin asignar.</html>");
+        panelAsignacion.add(nota, BorderLayout.CENTER);
+        JTabbedPane pestanasConfiguracion = new JTabbedPane();
+        pestanasConfiguracion.addTab("CPU y tamaños", campos);
+        pestanasConfiguracion.addTab("Asignación de memoria", panelAsignacion);
+        t.getContenido().add(pestanasConfiguracion, BorderLayout.CENTER);
         JLabel capacidad = etiqueta("");
         Runnable mostrarCapacidad = () -> {
             int n = ((Number) cantidadCpus.getValue()).intValue();
@@ -1275,6 +1335,10 @@ public class VentanaPrincipal extends JFrame {
                     ms.setText(String.valueOf(configuracion.getMemoriaSistema()));
                     as.setText(String.valueOf(configuracion.getAlmacenamientoSecundario()));
                     mv.setText(String.valueOf(configuracion.getMemoriaVirtual()));
+                    estrategiaMemoria.setSelectedItem(configuracion.getEstrategiaMemoria());
+                    tamanoPagina.setText(String.valueOf(configuracion.getTamanoPagina()));
+                    tamanoParticion.setText(String.valueOf(configuracion.getTamanoParticion()));
+                    particiones.setText(configuracion.getListaParticiones());
                 } catch (Exception ex) {
                     JOptionPane.showMessageDialog(dlg, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
                 }
@@ -1289,9 +1353,12 @@ public class VentanaPrincipal extends JFrame {
                     nivelesMLFQ.commitEdit();
                     boostMLFQ.commitEdit();
                 }
-                configuracion.setTamanos(
+                configuracion.setConfiguracionMemoria(
                     Integer.parseInt(mp.getText().trim()), Integer.parseInt(ms.getText().trim()),
-                    Integer.parseInt(as.getText().trim()), Integer.parseInt(mv.getText().trim()));
+                    Integer.parseInt(as.getText().trim()), Integer.parseInt(mv.getText().trim()),
+                    (EstrategiaMemoria) estrategiaMemoria.getSelectedItem(),
+                    Integer.parseInt(tamanoPagina.getText().trim()), Integer.parseInt(tamanoParticion.getText().trim()),
+                    particiones.getText());
                 configuracion.setCantidadCpus(((Number) cantidadCpus.getValue()).intValue());
                 configuracion.setAlgoritmoCpu((String) algoritmoCpu.getSelectedItem());
                 configuracion.setQuantumRR((Integer) quantumRR.getValue());
@@ -1962,41 +2029,26 @@ public class VentanaPrincipal extends JFrame {
             dibujarCentrado(g2, "S.O. · " + bcps + " BCP", x, ySO, w, hSO);
             etiquetaDireccion(g2, 0, ySO);
 
-            // Bloques de procesos (ordenados por base; si son muy pequeños se separan
-            // un poco para que las etiquetas no se encimen)
-            List<BCP> bloques = procesosEnMemoria();
-            bloques.sort((a, b) -> Integer.compare(a.getDireccionBase(), b.getDireccionBase()));
-            int finAnterior = ySO + hSO + 2;
-            int ultimaEtiqueta = ySO;
-            for (BCP b : bloques) {
-                int y = Math.max(arriba + (int) Math.round(b.getDireccionBase() * escala), finAnterior);
-                int alto = Math.max(18, (int) Math.round(b.getTamanioProceso() * escala));
-                Color c = Tema.colorProceso(b.getIdProceso());
-                g2.setColor(c);
-                g2.fillRoundRect(x, y, w, alto, 10, 10);
-                if ("Ejecución".equals(b.getEstado())) {
-                    g2.setColor(Tema.TEXTO);
-                    g2.setStroke(new BasicStroke(2f));
-                    g2.drawRoundRect(x + 1, y + 1, w - 3, alto - 3, 10, 10);
-                    g2.setStroke(new BasicStroke(1f));
-                    CPU activa = gestor.getCpu(b.getCpuId() - 1);
-                    double rel = (activa.getPC() - b.getDireccionBase() + 0.5) / Math.max(1, b.getTamanioProceso());
-                    int yPC = y + (int) Math.round(Math.max(0, Math.min(1, rel)) * alto);
-                    int xf = x + w + 2;
-                    g2.setColor(Tema.ROJO);
-                    g2.fillPolygon(new int[]{xf, xf + 10, xf + 10}, new int[]{yPC, yPC - 5, yPC + 5}, 3);
-                }
+            for (GestorMemoria.Bloque bloque : gestor.getGestorMemoria().getBloquesFisicos()) {
+                int y = arriba + (int) Math.round(bloque.base() * escala);
+                int alto = Math.max(1, (int) Math.round(bloque.tamanio() * escala));
+                BCP proceso = bloque.proceso();
+                g2.setColor(Tema.colorProceso(proceso.getIdProceso()));
+                g2.fillRect(x, y, w, alto);
                 g2.setColor(Color.WHITE);
                 g2.setFont(Tema.PEQUENA_B);
-                String texto = "P" + b.getIdProceso() + "  Base " + b.getDireccionBase()
-                    + " · Alcance " + b.getTamanioProceso();
-                if (g2.getFontMetrics().stringWidth(texto) > w - 8) texto = "P" + b.getIdProceso();
-                dibujarCentrado(g2, texto, x, y, w, alto);
-                if (y - ultimaEtiqueta >= 13) {
-                    etiquetaDireccion(g2, b.getDireccionBase(), y);
-                    ultimaEtiqueta = y;
-                }
-                finAnterior = y + alto + 2;
+                dibujarCentrado(g2, "P" + proceso.getIdProceso() + " · " + bloque.base()
+                    + "–" + (bloque.base() + bloque.tamanio() - 1), x, y, w, alto);
+            }
+            for (CPU cpu : gestor.getCpus()) {
+                BCP proceso = cpu.getBcpActual();
+                if (proceso == null) continue;
+                int pc = gestor.getGestorMemoria().direccionFisica(proceso, cpu.getPC() - proceso.getDireccionBase());
+                if (pc < 0) continue;
+                int yPC = arriba + (int) Math.round((pc + 0.5) * escala);
+                int xf = x + w + 2;
+                g2.setColor(Tema.ROJO);
+                g2.fillPolygon(new int[]{xf, xf + 10, xf + 10}, new int[]{yPC, yPC - 4, yPC + 4}, 3);
             }
 
             etiquetaDireccion(g2, total - 1, arriba + h - 10);

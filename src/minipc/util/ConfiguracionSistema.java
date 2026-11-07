@@ -50,6 +50,10 @@ public class ConfiguracionSistema {
     private int cantidadCpus = 1;
     private String algoritmoCpu = "FCFS";
     private int quantumRR = 2;
+    private minipc.hardware.EstrategiaMemoria estrategiaMemoria = minipc.hardware.EstrategiaMemoria.FIRST_FIT;
+    private int tamanoPagina = 8;
+    private int tamanoParticion = 32;
+    private String particiones = "16,32,64";
     private int nivelesMLFQ = 3;
     private int periodoBoostMLFQ = 20;
 
@@ -93,7 +97,12 @@ public class ConfiguracionSistema {
         int boost = leerEntero(p, "periodoBoostMLFQ", 20);
         validarMLFQ(niveles, boost);
         validarCantidadCpus(cpus);
-        setTamanos(mp, ms, as, mv);
+        minipc.hardware.EstrategiaMemoria estrategia = minipc.hardware.EstrategiaMemoria.valueOf(
+            p.getProperty("estrategiaMemoria", "FIRST_FIT").trim());
+        int pagina = leerEntero(p, "tamanoPagina", 8);
+        int particion = leerEntero(p, "tamanoParticion", 32);
+        String lista = p.getProperty("particiones", "16,32,64");
+        setConfiguracionMemoria(mp, ms, as, mv, estrategia, pagina, particion, lista);
         cantidadCpus = cpus;
         quantumRR = quantum;
         nivelesMLFQ = niveles;
@@ -113,6 +122,10 @@ public class ConfiguracionSistema {
         p.setProperty("cantidadCpus", String.valueOf(cantidadCpus));
         p.setProperty("algoritmoCpu", algoritmoCpu);
         p.setProperty("quantumRR", String.valueOf(quantumRR));
+        p.setProperty("estrategiaMemoria", estrategiaMemoria.name());
+        p.setProperty("tamanoPagina", String.valueOf(tamanoPagina));
+        p.setProperty("tamanoParticion", String.valueOf(tamanoParticion));
+        p.setProperty("particiones", particiones);
         p.setProperty("nivelesMLFQ", String.valueOf(nivelesMLFQ));
         p.setProperty("periodoBoostMLFQ", String.valueOf(periodoBoostMLFQ));
         try (FileWriter escritor = new FileWriter(archivo)) {
@@ -196,6 +209,56 @@ public class ConfiguracionSistema {
         cantidadCpus = cantidad;
     }
 
+    private static int[] leerParticiones(String lista){
+        if (lista == null || lista.isBlank()) throw new IllegalArgumentException("Ingrese tamaños de particiones separados por comas");
+        String[] partes = lista.split(",", -1);
+        int[] valores = new int[partes.length];
+        try {
+            for (int i = 0; i < partes.length; i++) {
+                valores[i] = Integer.parseInt(partes[i].trim());
+                if (valores[i] < 1 || valores[i] > 4096) throw new NumberFormatException();
+            }
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException("Cada partición debe tener entre 1 y 4096 posiciones");
+        }
+        return valores;
+    }
+
+    private static void validarAsignacion(int usuario, minipc.hardware.EstrategiaMemoria estrategia,
+                                         int pagina, int particion, String lista){
+        java.util.Objects.requireNonNull(estrategia, "Seleccione una estrategia de memoria");
+        if (pagina < 1 || pagina > 4096 || particion < 1 || particion > 4096)
+            throw new IllegalArgumentException("Página y partición deben tener entre 1 y 4096 posiciones");
+        int[] tamanos = leerParticiones(lista);
+        if (estrategia.esPaginada() && pagina > usuario)
+            throw new IllegalArgumentException("Debe caber al menos una página en la RAM de usuario");
+        if (estrategia == minipc.hardware.EstrategiaMemoria.FIJA_IGUAL && particion > usuario)
+            throw new IllegalArgumentException("Debe caber al menos una partición en la RAM de usuario");
+        long suma = java.util.Arrays.stream(tamanos).asLongStream().sum();
+        if (estrategia == minipc.hardware.EstrategiaMemoria.FIJA_VARIABLE && suma > usuario)
+            throw new IllegalArgumentException("Las particiones suman " + suma + " y la RAM de usuario tiene " + usuario);
+    }
+
+    public void setConfiguracionMemoria(int mp, int ms, int as, int mv,
+            minipc.hardware.EstrategiaMemoria estrategia, int pagina, int particion, String lista){
+        validar(mp, ms, as, mv);
+        validarAsignacion(mp - ms, estrategia, pagina, particion, lista);
+        memoriaPrincipal = mp;
+        memoriaSistema = ms;
+        almacenamientoSecundario = as;
+        memoriaVirtual = mv;
+        estrategiaMemoria = estrategia;
+        tamanoPagina = pagina;
+        tamanoParticion = particion;
+        particiones = lista.trim();
+    }
+
+    public minipc.hardware.EstrategiaMemoria getEstrategiaMemoria(){ return estrategiaMemoria; }
+    public int getTamanoPagina(){ return tamanoPagina; }
+    public int getTamanoParticion(){ return tamanoParticion; }
+    public String getListaParticiones(){ return particiones; }
+    public int[] getParticiones(){ return leerParticiones(particiones); }
+
     public int getMemoriaPrincipal(){
         return memoriaPrincipal; 
     }
@@ -216,6 +279,7 @@ public class ConfiguracionSistema {
     // R: valida todo antes de asignar
     public void setTamanos(int mp, int ms, int as, int mv){
         validar(mp, ms, as, mv);
+        validarAsignacion(mp - ms, estrategiaMemoria, tamanoPagina, tamanoParticion, particiones);
         memoriaPrincipal = mp;
         memoriaSistema = ms;
         almacenamientoSecundario = as;

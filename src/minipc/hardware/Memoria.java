@@ -95,6 +95,8 @@ public class Memoria {
             }
         }
         
+        public boolean estaOcupada(int posicion){ return ocupado[posicion]; }
+
         public int encontrarHueco(int tamanio) {
             int contador = 0;
             for (int x = inicioUsuario; x < tamanoTotal; x++) {
