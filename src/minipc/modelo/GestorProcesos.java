@@ -82,6 +82,13 @@ public class GestorProcesos {
             planificador.setAlgoritmo(new minipc.modelo.algoritmos.SelfishRoundRobin(c.getQuantumRR()));
         } else if ("Lottery".equals(c.getAlgoritmoCpu())) {
             planificador.setAlgoritmo(new minipc.modelo.algoritmos.Lottery(c.getQuantumRR()));
+        } else if ("Prioridad".equals(c.getAlgoritmoCpu())) {
+            planificador.setAlgoritmo(new minipc.modelo.algoritmos.Prioridad());
+        } else if ("Guaranteed".equals(c.getAlgoritmoCpu())) {
+            planificador.setAlgoritmo(new minipc.modelo.algoritmos.GuaranteedScheduling());
+        } else if ("MLFQ".equals(c.getAlgoritmoCpu())) {
+            planificador.setAlgoritmo(new minipc.modelo.algoritmos.MultilevelFeedbackQueue(
+                c.getNivelesMLFQ(), c.getQuantumRR(), c.getPeriodoBoostMLFQ()));
         }
     }
 
