@@ -662,10 +662,12 @@ public class VentanaPrincipal extends JFrame {
     private void configurarLlegadas(){
         List<BCP> procesos = gestor.getPendientesLlegada();
         int maximo = GestorProcesos.MAX_SEGUNDOS_AUTOMATICO - 1;
-        JPanel campos = new JPanel(new GridLayout(0, 3, 12, 8));
+        JPanel campos = new JPanel(new GridLayout(0, 4, 12, 8));
         campos.add(new JLabel("Proceso / archivo"));
         campos.add(new JLabel("Ráfaga (líneas)"));
         campos.add(new JLabel("Llegada (segundos desde 0)"));
+        campos.add(new JLabel("Boletos de Lottery"));
+        List<JSpinner> boletos = new ArrayList<>();
         List<JSpinner> entradas = new ArrayList<>();
         for (BCP b : procesos) {
             campos.add(new JLabel("P" + b.getIdProceso() + " - " + b.getArchivosAbiertos().get(0)));
@@ -673,9 +675,12 @@ public class VentanaPrincipal extends JFrame {
             JSpinner entrada = new JSpinner(new SpinnerNumberModel(b.getTiempoLlegada(), gestor.getReloj(), maximo, 1));
             entradas.add(entrada);
             campos.add(entrada);
+            JSpinner cantidad = new JSpinner(new SpinnerNumberModel(b.getBoletos(), 1, Integer.MAX_VALUE, 1));
+            boletos.add(cantidad);
+            campos.add(cantidad);
         }
         JScrollPane scroll = new JScrollPane(campos);
-        scroll.setPreferredSize(new Dimension(660, Math.min(380, 65 + procesos.size() * 35)));
+        scroll.setPreferredSize(new Dimension(820, Math.min(380, 65 + procesos.size() * 35)));
         while (true) {
             int opcion = JOptionPane.showConfirmDialog(this, scroll,
                 "Tiempos de llegada · reloj actual: " + gestor.getReloj() + " s",
@@ -683,11 +688,14 @@ public class VentanaPrincipal extends JFrame {
             if (opcion != JOptionPane.OK_OPTION) return; // Conserva las llegadas por defecto.
             try {
                 for (JSpinner entrada : entradas) entrada.commitEdit();
+                for (JSpinner cantidad : boletos) cantidad.commitEdit();
                 for (int i = 0; i < procesos.size(); i++)
                     gestor.configurarLlegada(procesos.get(i), ((Number) entradas.get(i).getValue()).intValue());
+                for (int i = 0; i < procesos.size(); i++)
+                    procesos.get(i).setBoletos(((Number) boletos.get(i).getValue()).intValue());
                 return;
             } catch (java.text.ParseException | IllegalArgumentException ex) {
-                avisar("Ingrese segundos enteros entre " + gestor.getReloj() + " y " + maximo + ".");
+                avisar("Ingrese llegadas entre " + gestor.getReloj() + " y " + maximo + ", y boletos enteros positivos.");
             }
         }
     }
@@ -1204,13 +1212,13 @@ public class VentanaPrincipal extends JFrame {
         campos.setOpaque(false);
         JSpinner cantidadCpus = new JSpinner(new SpinnerNumberModel(configuracion.getCantidadCpus(), 1, GestorProcesos.MAX_CPUS, 1));
         campos.add(etiqueta("Cantidad de CPU (1 a 5)")); campos.add(cantidadCpus);
-        JComboBox<String> algoritmoCpu = new JComboBox<>(new String[]{"FCFS", "SRT", "SPN", "RR", "HRRN", "SRR"});
+        JComboBox<String> algoritmoCpu = new JComboBox<>(new String[]{"FCFS", "SRT", "SPN", "RR", "HRRN", "SRR", "Lottery"});
         algoritmoCpu.setSelectedItem(configuracion.getAlgoritmoCpu());
         campos.add(etiqueta("Algoritmo de CPU")); campos.add(algoritmoCpu);
         JSpinner quantumRR = new JSpinner(new SpinnerNumberModel(configuracion.getQuantumRR(), 1, Integer.MAX_VALUE, 1));
-        quantumRR.setEnabled(("RR".equals(algoritmoCpu.getSelectedItem()) || "SRR".equals(algoritmoCpu.getSelectedItem())));
-        algoritmoCpu.addActionListener(e -> quantumRR.setEnabled(("RR".equals(algoritmoCpu.getSelectedItem()) || "SRR".equals(algoritmoCpu.getSelectedItem()))));
-        campos.add(etiqueta("Quantum de RR / SRR (s)")); campos.add(quantumRR);
+        quantumRR.setEnabled(("RR".equals(algoritmoCpu.getSelectedItem()) || "SRR".equals(algoritmoCpu.getSelectedItem()) || "Lottery".equals(algoritmoCpu.getSelectedItem())));
+        algoritmoCpu.addActionListener(e -> quantumRR.setEnabled(("RR".equals(algoritmoCpu.getSelectedItem()) || "SRR".equals(algoritmoCpu.getSelectedItem()) || "Lottery".equals(algoritmoCpu.getSelectedItem()))));
+        campos.add(etiqueta("Quantum de RR / SRR / Lottery (s)")); campos.add(quantumRR);
         JTextField mp = campo(configuracion.getMemoriaPrincipal());
         JTextField ms = campo(configuracion.getMemoriaSistema());
         JTextField as = campo(configuracion.getAlmacenamientoSecundario());

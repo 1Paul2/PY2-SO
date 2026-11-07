@@ -58,6 +58,7 @@ public class BCP {
     private int direccionBase;
     private int tamanioProceso;
     private int prioridad;
+    private int boletos = 1;
     private boolean flagGuardado;
     private int tiempoFin;
     private int rafaga;
@@ -296,6 +297,12 @@ public class BCP {
             return topePila;
         }
         
+
+        public int getBoletos(){ return boletos; }
+        public void setBoletos(int cantidad){
+            if (cantidad < 1) throw new IllegalArgumentException("Los boletos deben ser positivos");
+            boletos = cantidad;
+        }
 
         public int getRafaga(){ return rafaga; }
         public void setRafaga(int valor){
