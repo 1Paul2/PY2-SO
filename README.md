@@ -44,7 +44,7 @@ memoria, el disco, los BCP y la lista de trabajos.
 - Carga de uno o varios archivos `.asm` a la vez, con validación de sintaxis y mensajes claros (archivo, línea y motivo).
 - Los programas se guardan en disco, con un **índice** (nombre, dirección y tamaño) en los primeros registros.
 - Creación de un **BCP** por proceso con todos los campos del enunciado: estado, PC, registros (AC, AX, BX, CX, DX, IR), pila de 5 con control de desbordamiento, CPU, tiempo de inicio, tiempo empleado, archivos abiertos, enlace al siguiente BCP, base, alcance y prioridad.
-- **Modelo de 7 estados** (Stallings, cap. 3): **Nuevo, Preparado, Ejecución, En espera, Suspendido en espera, Suspendido preparado y Finalizado**.
+- **Modelo de 7 estados** (Stallings, cap. 3): **Nuevo, Preparado, Ejecución, En espera, Suspendido en espera, Suspendido preparado y Finalizado**. Un proceso que termina por un error queda como **Finalizado con error**, en rojo en la cola y en las estadísticas.
 - Los BCP se guardan en la **zona del S.O. de la memoria principal**, cada uno con la dirección de memoria del siguiente BCP.
 - **Lista de trabajos**, **planificador de trabajos** y **lista de procesos**.
 - 1 CPU que administra **hasta 5 procesos** en memoria; si no hay espacio, el proceso espera hasta que se libere.
@@ -54,10 +54,10 @@ memoria, el disco, los BCP y la lista de trabajos.
 - **Despachador** y **cambios de contexto** (cuando un proceso se bloquea por `INT 09H`, al terminar o ante un error).
 - **Memoria virtual**: si un programa no cabe completo en RAM, la parte restante se guarda en la memoria virtual del disco.
 - **Desbordamiento de memoria**: se rechaza un programa más grande que la RAM de usuario + la memoria virtual.
-- **Planificador FCFS**.
+- **Planificador FCFS**, implementado como una clase de la interfaz `AlgoritmoPlanificacion` (paquete `minipc.modelo.algoritmos`): agregar otro algoritmo es crear otra clase, sin tocar el gestor ni la CPU.
 - **Protección y seguridad** (ver sección propia).
 - Visualización del BCP actual, de los BCP en memoria, de los registros (PC, IR, AC…), del tiempo de ejecución y de la lista de trabajos con sus cambios de estado.
-- Configuración de memoria principal y disco desde un **archivo de texto** (`config.txt`) y desde un menú de configuración; la zona del S.O. (25 %) y la memoria virtual (12,5 % del disco) se calculan automáticamente.
+- Configuración de memoria principal, zona del S.O., disco y memoria virtual desde un **archivo de texto** (`config.txt`) y desde un menú de configuración.
 - **Estadísticas**: por proceso, hora:minuto de inicio, hora:minuto final, duración en segundos y tiempo de CPU.
 
 ## Objetivos no alcanzados
@@ -81,16 +81,13 @@ memoria, el disco, los BCP y la lista de trabajos.
 4. **Paso a paso** (1 segundo de CPU por clic) o **Ejecutar** (automático).
 
 La configuración se lee de `config.txt` en la raíz del proyecto. Si no existe, se
-crea con los valores por defecto. Al cerrar el programa, el archivo vuelve a los
-valores por defecto.
-
-Solo se configuran la **memoria principal** y el **disco**; los otros dos tamaños
-se calculan por porcentaje: **zona del S.O. = 25 %** de la memoria principal y
-**memoria virtual = 12,5 %** del disco (256 → 64 y 512 → 64 por defecto).
+crea con los valores por defecto. Los cuatro tamaños se configuran por separado y
+se conservan al cerrar el programa. La zona del S.O. debe tener al menos 16
+posiciones (un BCP); con 80 caben los 5 BCP.
 
 ```
 memoriaPrincipal=256
-memoriaSistema=64
+memoriaSistema=80
 almacenamientoSecundario=512
 memoriaVirtual=64
 ```
@@ -159,7 +156,7 @@ Cargar .asm ──► ParserASM valida ──► se guarda en Disco ──► se
                      ▼                                       │
           Suspendido en espera ──valor──► Suspendido preparado ──► (se recarga)
                                                              ▼
-                                   INT 20H o error ──► Finalizado (libera memoria)
+              INT 20H ──► Finalizado  ·  error ──► Finalizado con error  (libera memoria)
 ```
 
 ---
@@ -168,8 +165,25 @@ Cargar .asm ──► ParserASM valida ──► se guarda en Disco ──► se
 
 | Posiciones | Uso |
 |---|---|
-| 0 – 63 (25 %) | **Zona del S.O.**: un BCP por posición. Ej.: `BCP3\|Ejecución\|PC=85\|AC=0\|…\|Sig=4` (`Sig` = dirección del siguiente BCP) |
-| 64 – 255 | **Zona de usuario**: instrucciones de los programas, cada proceso en un bloque contiguo `[base, base + alcance)` |
+| 0 – 79 | **Zona del S.O.**: 5 bloques de 16 posiciones, uno por BCP (0–15, 16–31, 32–47, 48–63, 64–79). Cada posición guarda **un campo** del BCP |
+| 80 – 255 | **Zona de usuario**: instrucciones de los programas, cada proceso en un bloque contiguo `[base, base + alcance)` |
+
+### Bloque de un BCP (16 posiciones)
+
+| Desplazamiento | Campo | Ejemplo |
+|---|---|---|
+| +0 | Estado | `P1 · Ejecución` |
+| +1 | PC | `PC=82` |
+| +2 | IR | `IR=MOV DX, 0` |
+| +3 … +7 | AC, AX, BX, CX, DX | `AC=0`, `DX=1` |
+| +8 | AH, AL y bandera de CMP | `AH=3CH AL=42 CMP=igual` |
+| +9 | Pila (tamaño 5) y tope | `Pila=[3,4] SP=1` |
+| +10 | Información contable | `CPU=1 inicio=0s empleado=5s` |
+| +11 | Archivos abiertos | `Archivos=a.asm, datos.txt` |
+| +12 | Base | `Base=80` |
+| +13 | Alcance | `Alcance=6` |
+| +14 | Prioridad | `Prioridad=1` |
+| +15 | Enlace al siguiente BCP | `Sig=16` (dirección donde empieza el bloque del siguiente BCP de la cola; `-1` si es el último) |
 
 ## Mapa del disco (512 por defecto)
 
@@ -206,7 +220,9 @@ Cada clic de "Paso a paso" equivale a 1 segundo de CPU. Una instrucción se
 ejecuta cuando se cumplen los segundos de su peso (`CPU.tick()`).
 
 Para `INT 21H`, el nombre del archivo se carga con `MOV DX, "datos.txt"` y los
-valores hexadecimales se escriben como `MOV AH, 3CH`.
+valores hexadecimales se escriben como `MOV AH, 3CH`. El programa se guarda en
+memoria y en disco **tal como se escribió** (`MOV AH, 3CH`); el valor hexadecimal
+se convierte a número recién cuando la CPU ejecuta la instrucción.
 
 ### Validación del archivo `.asm` (`ParserASM`)
 
@@ -238,7 +254,9 @@ planificador y despachador.
 | Método | Qué hace |
 |---|---|
 | `prepararSiguientes()` | **Planificador de trabajos**: pasa programas del disco a memoria (máx. 5); si no caben completos usa memoria virtual; si un proceso en espera bloquea a otro, lo **suspende** |
-| `siguienteProceso()` | **Planificador de CPU (FCFS)**: entrega el primer proceso preparado |
+| `siguienteProceso()` | **Planificador de CPU**: le pide al `AlgoritmoPlanificacion` elegido (FCFS por defecto) qué proceso preparado entra a la CPU |
+| `debeExpropiar()` / `devolverAPreparados()` | Punto de expropiación para algoritmos como RR o SRT: el gestor hace el cambio de contexto y el proceso vuelve a la cola de preparados |
+| `setAlgoritmo()` | Cambia el algoritmo de planificación sin tocar el resto del sistema |
 | `enEspera()` / `salirDeEspera()` | Manejo de procesos bloqueados por teclado |
 | `terminar()` | Libera la memoria, la memoria virtual y la posición del BCP |
 
@@ -308,6 +326,33 @@ más programas cuando uno de los 5 que están en memoria espera el teclado.
 
 ---
 
+## Ráfaga y tiempo de llegada
+
+La **ráfaga** es la cantidad de líneas a procesar de cada archivo: no cuenta
+comentarios ni líneas vacías. Cada línea ocupa una posición de memoria y cada
+instrucción dura 1 segundo, así que la ráfaga también es el tiempo de CPU que
+necesita el proceso.
+
+Después de cargar los archivos se abre una ventana con la **llegada** de cada
+proceso, en segundos desde 0. El botón **Llegadas** permite cambiarlas mientras el
+proceso no haya llegado. Al cancelar se conservan las llegadas que ya tenían; por
+defecto es el valor del reloj al cargar.
+
+Hasta su llegada, el proceso queda en estado Nuevo, fuera de las colas y sin
+ocupar memoria. Si no hay nada que ejecutar, el reloj avanza con la CPU ociosa.
+Los empates se resuelven por orden de carga. Las llegadas de cada segundo entran
+antes de decidir una expropiación, y en la cola quedan delante del proceso que
+sale de la CPU.
+
+Prueba, desde la raíz del proyecto:
+
+```bash
+javac -encoding UTF-8 -d build/pruebas $(find src tests -name '*.java')
+java -cp build/pruebas PruebaLlegadas
+```
+
+---
+
 ## Interfaz gráfica
 
 | Panel | Muestra |
@@ -347,3 +392,98 @@ CMP DX, CX
 JNE -3         ; vuelve a INC DX mientras DX != 5
 INT 20H
 ```
+
+## Proyecto 2: múltiples CPU
+
+Rama: `feature/multiples-cpu`, creada desde `origin/dev`.
+
+Antes de cargar los programas, abrir **Configuración** y seleccionar de **1 a 5
+CPU**. La selección se guarda como `cantidadCpus` en `config.txt`; los archivos
+anteriores que no tienen esa propiedad siguen usando una CPU. Para cambiarla
+con una simulación en curso, usar **Limpiar** y configurar la siguiente ejecución.
+
+Cada clic en **Siguiente** avanza un segundo del reloj global. Cada CPU ocupada
+ejecuta una instrucción durante ese intervalo; cinco CPU no suman cinco segundos
+al reloj. **Ejecutar** aplica el mismo ciclo en modo automático o instantáneo.
+La ejecución se simula en orden de CPU, sin hilos reales: las operaciones sobre
+memoria, disco y pantalla compartidos son deterministas. Un fallo de un proceso
+finaliza únicamente ese proceso.
+
+Se utiliza una cola de preparados compartida y hasta cinco procesos residentes
+por CPU de capacidad agregada (25 con cinco CPU), sin afinidad fija. Los registros,
+la pila, el BCP y el contador de quantum pertenecen a cada contexto. Un proceso
+expropiado puede continuar en otra CPU. La capacidad efectiva también depende de
+la RAM y de los bloques BCP disponibles; los excedentes esperan en disco.
+
+Cada BCP requiere 16 posiciones del S.O.: para admitir 25 procesos residentes se
+necesitan **400 posiciones de S.O.**, más la memoria de usuario para sus programas.
+Un ejemplo de configuración es memoria principal 1024, S.O. 400, disco 2048,
+memoria virtual 64 y cantidadCpus 5. La configuración inicial S.O. 80 permite cinco
+residentes aunque se hayan seleccionado cinco CPU. El diálogo muestra la cantidad
+de posiciones requerida para los grupos completos.
+
+**Dispositivos** muestra el proceso, estado y PC de todas las CPU. Seleccionar una
+fila o usar **Detalle de CPU** para inspeccionar sus registros, pila y BCP. La cola
+de trabajos incluye la columna CPU (última CPU asignada para procesos preparados o
+finalizados). El mapa resalta los procesos ejecutándose en todos los núcleos; la
+tabla de memoria sigue el PC de la CPU seleccionada. La pantalla reúne las salidas
+de todas las CPU.
+
+Pruebas de regresión desde PowerShell en la raíz del repositorio:
+
+```powershell
+New-Item -ItemType Directory -Force build/classes | Out-Null
+$fuentes = @(Get-ChildItem src -Recurse -Filter *.java | ForEach-Object FullName)
+javac -encoding UTF-8 -d build/classes $fuentes tests/PruebaLlegadas.java tests/PruebaMultiplesCpu.java
+java -cp build/classes PruebaLlegadas
+java -cp build/classes PruebaMultiplesCpu
+```
+
+Las pruebas cubren las cantidades 1-5, reloj compartido, registros independientes,
+25 residentes con excedentes, llegadas futuras, memoria limitada, aislamiento de
+errores, pantalla compartida, persistencia y migración por expropiación. La prueba
+usa un algoritmo RR de ejemplo interno; los algoritmos nuevos de producción y las
+estadísticas acumuladas siguen siendo tareas independientes.
+
+## Proyecto 2: asignación de memoria
+
+En Configuración, la pestaña **Asignación de memoria** permite seleccionar
+First Fit, Next Fit, Best Fit, particiones fijas iguales, particiones fijas
+diferentes, paginación física o paginación virtual. Los tamaños de RAM, zona
+del S.O., disco y memoria virtual siguen en **CPU y tamaños**.
+
+Los parámetros usan posiciones de memoria, con una instrucción por posición.
+Las particiones iguales tienen tamaño fijo. Las diferentes se ingresan como
+una lista separada por comas y su suma debe caber en la zona de usuario.
+El espacio restante que no forma una partición o marco completo queda sin
+asignar. Las reservas incluyen la fragmentación interna y se liberan completas.
+
+En paginación, cada proceso tiene direcciones lógicas desde cero. La tabla
+de páginas muestra las bases de los marcos físicos o bloques de respaldo.
+La CPU traduce cada instrucción sin cambiar los desplazamientos de los saltos.
+Paginación física requiere todos los marcos en RAM. Paginación virtual permite
+guardar páginas en disco y reemplaza la más antigua en RAM mediante FIFO al
+acceder a una página ausente. Los fallos se cuentan y se resuelven dentro del
+paso actual, conservando la duración de un segundo por instrucción.
+
+La vista **RAM física** muestra las reservas, los BCP y el PC traducido de la
+CPU seleccionada. El mapa marca los PC residentes de todas las CPU. La pestaña
+**Tabla de páginas** y la tabla de disco permiten identificar las páginas de
+cada proceso. Los recursos muestran las posiciones físicas reservadas.
+
+El archivo config.txt conserva la selección mediante estrategiaMemoria,
+tamanoPagina, tamanoParticion y particiones. Los archivos anteriores usan
+First Fit. Por defecto, las páginas tienen 8 posiciones, las particiones
+iguales 32 y la lista de tamaños diferentes es 16,32,64. Estos parámetros
+se aplican al crear una nueva simulación.
+
+La prueba tests/PruebaMemoria.java comprueba huecos, cursor circular, particiones,
+fragmentación, marcos no contiguos, intercambio FIFO, liberación tras errores,
+persistencia y 350 combinaciones de las siete estrategias, diez algoritmos
+de CPU y cantidades de una a cinco CPU.
+
+~~~powershell
+$fuentes = @(Get-ChildItem src -Recurse -Filter *.java | ForEach-Object FullName)
+javac -encoding UTF-8 -d build/classes $fuentes tests/PruebaMemoria.java
+java -cp build/classes PruebaMemoria
+~~~

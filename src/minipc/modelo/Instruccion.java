@@ -15,8 +15,8 @@ import java.util.List;
  * operación y de 0 a 3 operandos guardados como texto. Así el mismo campo
  * sirve para registros ("AX"), números ("5", "-2") o interrupciones ("20H").
  *
- * Ejemplos de texto en memoria:
- *   "MOV BX AX", "MOV BX 5", "INC", "PARAM 1 2 3", "INT 20H"
+ * Ejemplos de texto en memoria (los números quedan tal como se escribieron):
+ *   "MOV BX, AX", "MOV BX, 5", "MOV AH, 3CH", "INC", "PARAM 1, 2, 3", "INT 20H"
  */
 public class Instruccion {
     private String operacion;
@@ -52,14 +52,16 @@ public class Instruccion {
         return operandos.clone();
     }
 
+    // Correccion - Poll (observación PY1): los operandos se separan con ", " como en el archivo .asm,
+    // así la memoria y el disco muestran la instrucción igual que la escribió el programador
     // E: no aplica
-    // S: String - la instrucción como texto, separada por espacios, lista para memoria y disco
+    // S: String - la instrucción como texto, p. ej. "MOV AH, 3CH", lista para memoria y disco
     // R: ninguna
     public String getTextoCompleto(){
         if(operandos.length == 0){
             return operacion;
         }
-        return operacion + " " + String.join(" ", operandos);
+        return operacion + " " + String.join(", ", operandos);
     }
 
     @Override

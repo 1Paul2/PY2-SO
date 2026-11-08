@@ -29,6 +29,9 @@ public class ParserASM {
     private static final int VALOR_MAX = 127;
     private static final int MAX_PARAMETROS = 3;
 
+    // Correccion - Poll: INT 09H (teclado) ya no es válida; se rechaza con un mensaje propio
+    // Correccion - Poll (observación PY1): los números se guardan tal como se escribieron
+    // ("3CH" sigue siendo "3CH" en memoria y disco); antes se convertían a decimal ("60")
     // E: linea (String) - una línea del .asm, sin comentarios y no vacía
     // S: Instruccion - la instrucción validada
     // R: lanza IllegalArgumentException con el motivo si la línea no es válida
@@ -129,9 +132,8 @@ public class ParserASM {
                 if(ConversorBinario.esRegistroValido(ops[1])){
                     return new Instruccion(operacion, ops[0], ops[1]);
                 }
-                int valor = exigirNumero(ops[1]);
-                validarRango(valor);
-                return new Instruccion(operacion, ops[0], String.valueOf(valor));
+                validarRango(exigirNumero(ops[1]));
+                return new Instruccion(operacion, ops[0], ops[1]);
             }
 
             // ---- Dos registros: SWAP AX, BX y CMP AX, BX ----
@@ -152,27 +154,27 @@ public class ParserASM {
                 if(desp == 0){
                     throw new IllegalArgumentException("un desplazamiento de 0 salta a la misma instrucción (ciclo infinito)");
                 }
-                return new Instruccion(operacion, String.valueOf(desp));
+                return new Instruccion(operacion, ops[0]);
             }
 
             // ---- PARAM v1, v2, v3 (de 1 a 3 valores) ----
             case "PARAM": {
                 exigirCantidad(operacion, ops, 1, MAX_PARAMETROS);
-                String[] valores = new String[ops.length];
-                for(int i = 0; i < ops.length; i++){
-                    int v = exigirNumero(ops[i]);
-                    validarRango(v);
-                    valores[i] = String.valueOf(v);
+                for(String op : ops){
+                    validarRango(exigirNumero(op));
                 }
-                return new Instruccion(operacion, valores);
+                return new Instruccion(operacion, ops);
             }
 
-            // ---- INT 20H / 10H / 09H / 21H ----
+            // ---- INT 20H / 10H / 21H ----
             case "INT": {
                 exigirCantidad(operacion, ops, 1, 1);
+                if("09H".equals(ops[0])){
+                    throw new IllegalArgumentException("la interrupción INT 09H (entrada de teclado) ya no se usa en este proyecto");
+                }
                 if(!TipoOperacion.esInterrupcionValida(ops[0])){
                     throw new IllegalArgumentException("la interrupción \"" + ops[0]
-                        + "\" no existe (válidas: 20H, 10H, 09H, 21H)");
+                        + "\" no existe (válidas: 20H, 10H, 21H)");
                 }
                 return new Instruccion(operacion, ops[0]);
             }
@@ -203,15 +205,13 @@ public class ParserASM {
         }
     }
 
-    // E: texto (String) - operando que debe ser un número entero
-    // S: int - el número
+    // Correccion - Poll: usa ConversorBinario.aEntero, la misma conversión que hace la CPU al ejecutar
+    // E: texto (String) - operando que debe ser un número entero (decimal o hexadecimal con H: 3CH)
+    // S: int - el número, solo para validarlo; la instrucción guarda el texto original
     // R: lanza IllegalArgumentException si no es un número
     private static int exigirNumero(String texto){
         try {
-            if (texto.matches("[0-9][0-9A-F]*H")) {          // hexadecimal: 3CH, 41H, 0FH
-                return Integer.parseInt(texto.substring(0, texto.length() - 1), 16);
-            }
-            return Integer.parseInt(texto);
+            return ConversorBinario.aEntero(texto);
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("\"" + texto + "\" no es un número válido");
         }

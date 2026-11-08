@@ -11,6 +11,7 @@ package minipc.util;
  *
  */
 
+import minipc.modelo.BCP;
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
@@ -21,51 +22,40 @@ import java.util.Properties;
  * ConfiguracionSistema: tamaños de memoria principal, zona del S.O., disco y
  * memoria virtual. Se leen de un archivo de texto (config.txt) para que no
  * queden fijos en el código. Si el archivo no existe, se crea con los valores
- * por defecto del enunciado (256 / 512 / 64, S.O. = 25%).
- *
- * Solo se configuran la memoria principal y el disco. Los otros dos tamaños se
- * calculan siempre como porcentaje:
- *   - Zona del S.O.     = 25 %   de la memoria principal 
- *   - Memoria virtual   = 12,5 % del disco                
+ * por defecto (256 / 80 / 512 / 64). Los cuatro tamaños se configuran por separado.
  *
  * Formato de config.txt:
  *   memoriaPrincipal=256
- *   memoriaSistema=64           
+ *   memoriaSistema=80
  *   almacenamientoSecundario=512
- *   memoriaVirtual=64            
+ *   memoriaVirtual=64
  */
 public class ConfiguracionSistema {
 
     public static final String ARCHIVO_POR_DEFECTO = "config.txt";
 
-    // Valores predeterminados del enunciado
+    // Valores predeterminados: memoria principal 256, disco 512 y memoria virtual 64 son los del
+    // enunciado. La zona del S.O. la define el diseño:
+    // Correccion - Poll (observación PY1): cada BCP ocupa ahora un bloque de BCP.TAMANO_BLOQUE (16)
+    // posiciones, así que la zona del S.O. pasa de 64 a 80 para que quepan los 5 BCP
     public static final int MEMORIA_PRINCIPAL_DEF = 256;
-    public static final int MEMORIA_SISTEMA_DEF = 64;          // 25% de la memoria principal
+    public static final int MEMORIA_SISTEMA_DEF = 5 * BCP.TAMANO_BLOQUE;
     public static final int ALMACENAMIENTO_DEF = 512;
     public static final int MEMORIA_VIRTUAL_DEF = 64;
-
-    // Porcentajes con los que se calculan la zona del S.O. y la memoria virtual
-    public static final double PORCENTAJE_SO = 0.25;         // 25 % de la memoria principal
-    public static final double PORCENTAJE_VIRTUAL = 0.125;   // 12,5 % del disco
-
-    // E: memoriaPrincipal (int)
-    // S: int - tamaño de la zona del S.O. (25 % de la memoria principal)
-    // R: ninguna
-    public static int calcularZonaSO(int memoriaPrincipal){
-        return (int) Math.round(memoriaPrincipal * PORCENTAJE_SO);
-    }
-
-    // E: almacenamiento (int) - tamaño del disco
-    // S: int - tamaño de la memoria virtual (12,5 % del disco)
-    // R: ninguna
-    public static int calcularMemoriaVirtual(int almacenamiento){
-        return (int) Math.round(almacenamiento * PORCENTAJE_VIRTUAL);
-    }
 
     private int memoriaPrincipal = MEMORIA_PRINCIPAL_DEF;
     private int memoriaSistema = MEMORIA_SISTEMA_DEF;
     private int almacenamientoSecundario = ALMACENAMIENTO_DEF;
     private int memoriaVirtual = MEMORIA_VIRTUAL_DEF;
+    private int cantidadCpus = 1;
+    private String algoritmoCpu = "FCFS";
+    private int quantumRR = 2;
+    private minipc.hardware.EstrategiaMemoria estrategiaMemoria = minipc.hardware.EstrategiaMemoria.FIRST_FIT;
+    private int tamanoPagina = 8;
+    private int tamanoParticion = 32;
+    private String particiones = "16,32,64";
+    private int nivelesMLFQ = 3;
+    private int periodoBoostMLFQ = 20;
 
     // E: no aplica
     // S: no aplica (constructor)
@@ -84,6 +74,8 @@ public class ConfiguracionSistema {
         }
     }
 
+    // Correccion - Poll: lee también la zona del S.O. y la memoria virtual del archivo, en vez de
+    // calcularlas con porcentajes fijos
     // E: archivo (File) - archivo de configuración clave=valor
     // S: no aplica (void)
     // R: lanza IllegalArgumentException si un valor no es válido
@@ -93,8 +85,29 @@ public class ConfiguracionSistema {
             p.load(lector);
         }
         int mp = leerEntero(p, "memoriaPrincipal", memoriaPrincipal);
+        int ms = leerEntero(p, "memoriaSistema", memoriaSistema);
         int as = leerEntero(p, "almacenamientoSecundario", almacenamientoSecundario);
-        setTamanos(mp, as);   // la zona del S.O. y la memoria virtual se calculan por porcentaje
+        int mv = leerEntero(p, "memoriaVirtual", memoriaVirtual);
+        int cpus = leerEntero(p, "cantidadCpus", 1);
+        String algoritmo = p.getProperty("algoritmoCpu", "FCFS").trim();
+        validarAlgoritmoCpu(algoritmo);
+        int quantum = leerEntero(p, "quantumRR", 2);
+        validarQuantumRR(quantum);
+        int niveles = leerEntero(p, "nivelesMLFQ", 3);
+        int boost = leerEntero(p, "periodoBoostMLFQ", 20);
+        validarMLFQ(niveles, boost);
+        validarCantidadCpus(cpus);
+        minipc.hardware.EstrategiaMemoria estrategia = minipc.hardware.EstrategiaMemoria.valueOf(
+            p.getProperty("estrategiaMemoria", "FIRST_FIT").trim());
+        int pagina = leerEntero(p, "tamanoPagina", 8);
+        int particion = leerEntero(p, "tamanoParticion", 32);
+        String lista = p.getProperty("particiones", "16,32,64");
+        setConfiguracionMemoria(mp, ms, as, mv, estrategia, pagina, particion, lista);
+        cantidadCpus = cpus;
+        quantumRR = quantum;
+        nivelesMLFQ = niveles;
+        periodoBoostMLFQ = boost;
+        algoritmoCpu = algoritmo;
     }
 
     // E: archivo (File) - destino
@@ -106,23 +119,42 @@ public class ConfiguracionSistema {
         p.setProperty("memoriaSistema", String.valueOf(memoriaSistema));
         p.setProperty("almacenamientoSecundario", String.valueOf(almacenamientoSecundario));
         p.setProperty("memoriaVirtual", String.valueOf(memoriaVirtual));
+        p.setProperty("cantidadCpus", String.valueOf(cantidadCpus));
+        p.setProperty("algoritmoCpu", algoritmoCpu);
+        p.setProperty("quantumRR", String.valueOf(quantumRR));
+        p.setProperty("estrategiaMemoria", estrategiaMemoria.name());
+        p.setProperty("tamanoPagina", String.valueOf(tamanoPagina));
+        p.setProperty("tamanoParticion", String.valueOf(tamanoParticion));
+        p.setProperty("particiones", particiones);
+        p.setProperty("nivelesMLFQ", String.valueOf(nivelesMLFQ));
+        p.setProperty("periodoBoostMLFQ", String.valueOf(periodoBoostMLFQ));
         try (FileWriter escritor = new FileWriter(archivo)) {
             p.store(escritor, "Configuracion del Mini PC");
         }
     }
 
+    // Correccion - Poll: como la memoria virtual ya no se calcula, se valida que deje espacio en el
+    // disco para el índice y los archivos
+    // Correccion - Poll (observación PY1): la zona del S.O. debe alcanzar al menos para un bloque de BCP
+    // (16 posiciones); con menos de 80 caben menos de 5 procesos a la vez
     // E: los cuatro tamaños
     // S: no aplica (void)
     // R: lanza IllegalArgumentException con un mensaje claro si algún valor no es coherente
     public static void validar(int mp, int ms, int as, int mv){
-        if (mp < 128 || mp > 4096) 
+        if (mp < 128 || mp > 4096)
             throw new IllegalArgumentException("La memoria principal debe estar entre 128 y 4096");
-        if (ms < 5 || ms >= mp) 
-            throw new IllegalArgumentException("La zona del S.O. debe ser al menos 5 (para los BCP) y menor que la memoria principal");
-        if (mv < 0) 
-            throw new IllegalArgumentException("La memoria virtual no puede ser negativa");
-        if (as < 128 || as > 8192) 
+        if (ms < BCP.TAMANO_BLOQUE || ms >= mp)
+            throw new IllegalArgumentException("La zona del S.O. debe ser al menos " + BCP.TAMANO_BLOQUE
+                + " (un BCP ocupa " + BCP.TAMANO_BLOQUE + " posiciones; para 5 procesos hacen falta "
+                + (5 * BCP.TAMANO_BLOQUE) + ") y menor que la memoria principal");
+        if (as < 128 || as > 8192)
             throw new IllegalArgumentException("El disco debe estar entre 128 y 8192");
+        if (mv < 0)
+            throw new IllegalArgumentException("La memoria virtual no puede ser negativa");
+        int indice = Math.max(10, as / 16);   // mismo tamaño de índice que usa Disco
+        if (mv >= as - indice)
+            throw new IllegalArgumentException("La memoria virtual debe ser menor que " + (as - indice)
+                + " para dejar espacio en el disco al índice (" + indice + ") y a los archivos");
     }
 
     private int leerEntero(Properties p, String clave, int porDefecto){
@@ -134,6 +166,98 @@ public class ConfiguracionSistema {
             throw new IllegalArgumentException("El valor de \"" + clave + "\" no es un número: " + v);
         }
     }
+
+    public static void validarCantidadCpus(int cantidad){
+        if (cantidad < 1 || cantidad > 5)
+            throw new IllegalArgumentException("La cantidad de CPU debe estar entre 1 y 5");
+    }
+    private static void validarAlgoritmoCpu(String algoritmo){
+        if (!"FCFS".equals(algoritmo) && !"SRT".equals(algoritmo) && !"SPN".equals(algoritmo) && !"RR".equals(algoritmo) && !"HRRN".equals(algoritmo) && !"SRR".equals(algoritmo) && !"Lottery".equals(algoritmo) && !"Prioridad".equals(algoritmo)
+            && !"Guaranteed".equals(algoritmo) && !"MLFQ".equals(algoritmo))
+            throw new IllegalArgumentException("Algoritmo de CPU inválido: " + algoritmo);
+    }
+    public String getAlgoritmoCpu(){ return algoritmoCpu; }
+    public void setAlgoritmoCpu(String algoritmo){
+        validarAlgoritmoCpu(algoritmo);
+        algoritmoCpu = algoritmo;
+    }
+
+    private static void validarQuantumRR(int quantum){
+        if (quantum < 1) throw new IllegalArgumentException("El quantum debe ser positivo");
+    }
+    public int getQuantumRR(){ return quantumRR; }
+    public void setQuantumRR(int quantum){
+        validarQuantumRR(quantum);
+        quantumRR = quantum;
+    }
+
+    private static void validarMLFQ(int niveles, int boost){
+        if (niveles < 2 || niveles > 8 || boost < 1)
+            throw new IllegalArgumentException("MLFQ requiere 2 a 8 niveles y promoción positiva");
+    }
+    public int getNivelesMLFQ(){ return nivelesMLFQ; }
+    public int getPeriodoBoostMLFQ(){ return periodoBoostMLFQ; }
+    public void setParametrosMLFQ(int niveles, int boost){
+        validarMLFQ(niveles, boost);
+        nivelesMLFQ = niveles;
+        periodoBoostMLFQ = boost;
+    }
+
+    public int getCantidadCpus(){ return cantidadCpus; }
+    public void setCantidadCpus(int cantidad){
+        validarCantidadCpus(cantidad);
+        cantidadCpus = cantidad;
+    }
+
+    private static int[] leerParticiones(String lista){
+        if (lista == null || lista.isBlank()) throw new IllegalArgumentException("Ingrese tamaños de particiones separados por comas");
+        String[] partes = lista.split(",", -1);
+        int[] valores = new int[partes.length];
+        try {
+            for (int i = 0; i < partes.length; i++) {
+                valores[i] = Integer.parseInt(partes[i].trim());
+                if (valores[i] < 1 || valores[i] > 4096) throw new NumberFormatException();
+            }
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException("Cada partición debe tener entre 1 y 4096 posiciones");
+        }
+        return valores;
+    }
+
+    private static void validarAsignacion(int usuario, minipc.hardware.EstrategiaMemoria estrategia,
+                                         int pagina, int particion, String lista){
+        java.util.Objects.requireNonNull(estrategia, "Seleccione una estrategia de memoria");
+        if (pagina < 1 || pagina > 4096 || particion < 1 || particion > 4096)
+            throw new IllegalArgumentException("Página y partición deben tener entre 1 y 4096 posiciones");
+        int[] tamanos = leerParticiones(lista);
+        if (estrategia.esPaginada() && pagina > usuario)
+            throw new IllegalArgumentException("Debe caber al menos una página en la RAM de usuario");
+        if (estrategia == minipc.hardware.EstrategiaMemoria.FIJA_IGUAL && particion > usuario)
+            throw new IllegalArgumentException("Debe caber al menos una partición en la RAM de usuario");
+        long suma = java.util.Arrays.stream(tamanos).asLongStream().sum();
+        if (estrategia == minipc.hardware.EstrategiaMemoria.FIJA_VARIABLE && suma > usuario)
+            throw new IllegalArgumentException("Las particiones suman " + suma + " y la RAM de usuario tiene " + usuario);
+    }
+
+    public void setConfiguracionMemoria(int mp, int ms, int as, int mv,
+            minipc.hardware.EstrategiaMemoria estrategia, int pagina, int particion, String lista){
+        validar(mp, ms, as, mv);
+        validarAsignacion(mp - ms, estrategia, pagina, particion, lista);
+        memoriaPrincipal = mp;
+        memoriaSistema = ms;
+        almacenamientoSecundario = as;
+        memoriaVirtual = mv;
+        estrategiaMemoria = estrategia;
+        tamanoPagina = pagina;
+        tamanoParticion = particion;
+        particiones = lista.trim();
+    }
+
+    public minipc.hardware.EstrategiaMemoria getEstrategiaMemoria(){ return estrategiaMemoria; }
+    public int getTamanoPagina(){ return tamanoPagina; }
+    public int getTamanoParticion(){ return tamanoParticion; }
+    public String getListaParticiones(){ return particiones; }
+    public int[] getParticiones(){ return leerParticiones(particiones); }
 
     public int getMemoriaPrincipal(){
         return memoriaPrincipal; 
@@ -148,31 +272,14 @@ public class ConfiguracionSistema {
         return memoriaVirtual;
     }
 
-    // E: los cuatro tamaños
+    // Correccion - Poll: recibe los cuatro tamaños; la zona del S.O. y la memoria virtual ya no
+    // se calculan con porcentajes fijos (25 % y 12,5 %)
+    // E: mp (int) - memoria principal; ms (int) - zona del S.O.; as (int) - disco; mv (int) - memoria virtual
     // S: no aplica (void)
-    // R: valida antes de asignar
-    // E: no aplica
-    // S: no aplica (void)
-    // R: vuelve a los valores predeterminados y los guarda en config.txt
-    public void restaurarPredeterminados(){
-        memoriaPrincipal = MEMORIA_PRINCIPAL_DEF;
-        memoriaSistema = MEMORIA_SISTEMA_DEF;
-        almacenamientoSecundario = ALMACENAMIENTO_DEF;
-        memoriaVirtual = MEMORIA_VIRTUAL_DEF;
-        try {
-            guardarEnArchivo(new File(ARCHIVO_POR_DEFECTO));
-        } catch (IOException e) {
-            System.err.println("No se pudo restaurar " + ARCHIVO_POR_DEFECTO + ": " + e.getMessage());
-        }
-    }
-
-    // E: mp (int) - memoria principal; as (int) - disco
-    // S: no aplica (void)
-    // R: calcula la zona del S.O. (25 %) y la memoria virtual (12,5 %) y valida todo antes de asignar
-    public void setTamanos(int mp, int as){
-        int ms = calcularZonaSO(mp);
-        int mv = calcularMemoriaVirtual(as);
+    // R: valida todo antes de asignar
+    public void setTamanos(int mp, int ms, int as, int mv){
         validar(mp, ms, as, mv);
+        validarAsignacion(mp - ms, estrategiaMemoria, tamanoPagina, tamanoParticion, particiones);
         memoriaPrincipal = mp;
         memoriaSistema = ms;
         almacenamientoSecundario = as;

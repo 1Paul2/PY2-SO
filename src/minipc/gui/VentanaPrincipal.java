@@ -36,6 +36,8 @@ import minipc.gui.VentanaPrincipal.Componentes.Tarjeta;
 import minipc.hardware.CPU;
 import minipc.hardware.Disco;
 import minipc.hardware.Memoria;
+import minipc.hardware.EstrategiaMemoria;
+import minipc.hardware.GestorMemoria;
 import minipc.modelo.BCP;
 import minipc.modelo.GestorProcesos;
 import minipc.modelo.Instruccion;
@@ -46,7 +48,7 @@ import minipc.util.ParserASM;
 /**
  * VentanaPrincipal: interfaz gráfica del Mini PC. Muestra la cola de trabajos,
  * la CPU y sus registros, el BCP actual, la pila, la memoria principal (mapa
- * y tabla), el disco y la pantalla/teclado. Toda la lógica la delega en
+ * y tabla), el disco y la pantalla. Toda la lógica la delega en
  * GestorProcesos; esta clase solo dibuja y reacciona a los botones.
  */
 public class VentanaPrincipal extends JFrame {
@@ -56,15 +58,14 @@ public class VentanaPrincipal extends JFrame {
 
     // Ejecución automática
     private final Timer timerAuto;
-    // En Siguiente: mientras un proceso espera el teclado (INT 09H), el reloj
-    // avanza solo cada segundo real hasta que se ingrese el valor
-    private final Timer timerEspera;
     private boolean modoAutomatico = false;
 
     // ---- Encabezado y barra de herramientas ----
-    private JLabel lblReloj, lblHora;
-    private Boton btnCargar, btnEjecutar, btnPaso, btnDetener, btnLimpiar, btnEstadisticas, btnConfigurar, btnSalir;
+    private JLabel lblReloj;
+    private Boton btnCargar, btnEjecutar, btnPaso, btnDetener, btnLlegadas, btnLimpiar, btnEstadisticas, btnConfigurar, btnSalir;
     private JComboBox<String> cmbVelocidad;
+    private JComboBox<String> cmbCpuDetalle;
+    private DefaultTableModel modeloCpus;
 
     // ---- Cola de trabajos ----
     private Tarjeta tarjetaCola;
@@ -73,28 +74,27 @@ public class VentanaPrincipal extends JFrame {
 
     // ---- Recursos y dispositivos ----
     private BarraUso barraProcesos, barraMemoria, barraBCP, barraDisco, barraVirtual;
-    private Distintivo dispCPU, dispPantalla, dispTeclado, dispDisco;
+    private Distintivo dispCPU, dispPantalla, dispDisco;
 
     // ---- Memoria ----
     private Tarjeta tarjetaMemoria;
     private MapaMemoria mapaMemoria;
     private DefaultTableModel modeloMemoria;
     private JTable tablaMemoria;
+    private DefaultTableModel modeloPaginas;
     private String[] duenoPosicion = new String[0];   // "S.O.", "P1"  por posición
     private int posicionPC = -1;
-    private int posicionPCVirtual = -1;   // posición del disco del PC si ejecuta desde memoria virtual
 
     // ---- CPU ----
     private JLabel lblProcesoActual, lblInstruccion;
     private Distintivo distEstadoCPU;
     private final JLabel[] valoresRegistro = new JLabel[10];  // PC, IR, AC, AX, BX, CX, DX, FLAG, AH, AL
-    private JProgressBar barraInstruccion;
 
     // ---- Pila ----
     private PanelPila panelPila;
 
     // ---- BCP ----
-    private final JLabel[] valoresBCP = new JLabel[10];
+    private final JLabel[] valoresBCP = new JLabel[12];
     private Distintivo distEstadoBCP;
 
     // ---- Disco ----
@@ -102,21 +102,17 @@ public class VentanaPrincipal extends JFrame {
     private DefaultTableModel modeloDisco;
     private JTable tablaDisco;
 
-    // ---- Pantalla y teclado ----
+    // ---- Pantalla ----
     private JTextPane areaPantalla;
-    private JTextField txtTeclado;
-    private Boton btnEnviar;
-    private JLabel lblTeclado;
 
+    // Correccion - Poll: se quita el timer que contaba los segundos de espera del teclado, y el
+    // shutdown hook que devolvía config.txt a los valores por defecto al cerrar
     // E: no aplica
     // S: no aplica constructor
     // R: arma la ventana completa con la configuración de config.txt
     public VentanaPrincipal(){
         super("Mini PC · Gestor de Procesos");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        // Al cerrar el programa (botón Salir, la X de la ventana o Stop de NetBeans)
-        // la configuración vuelve a los valores predeterminados en config.txt
-        Runtime.getRuntime().addShutdownHook(new Thread(configuracion::restaurarPredeterminados));
         getContentPane().setBackground(Tema.FONDO);
         setLayout(new BorderLayout(0, 12));
         ((JComponent) getContentPane()).setBorder(new EmptyBorder(14, 16, 14, 16));
@@ -125,7 +121,6 @@ public class VentanaPrincipal extends JFrame {
         add(crearCuerpo(), BorderLayout.CENTER);
 
         timerAuto = new Timer(400, e -> pasoAutomatico());
-        timerEspera = new Timer(1000, e -> segundoDeEspera());
 
         setMinimumSize(new Dimension(1280, 780));
         setSize(new Dimension(1500, 900));
@@ -138,6 +133,7 @@ public class VentanaPrincipal extends JFrame {
     //ENCABEZADO
 
 
+    // Correccion - Poll: se quita el chip de hora real; el tiempo se muestra solo en segundos desde 0
     private JPanel crearEncabezado(){
         JPanel panel = new JPanel(new BorderLayout(0, 12));
         panel.setOpaque(false);
@@ -176,9 +172,7 @@ public class VentanaPrincipal extends JFrame {
         JPanel reloj = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         reloj.setOpaque(false);
         lblReloj = chip("Tiempo  0 s", Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
-        lblHora = chip("--:--:--", Tema.AZUL, Tema.AZUL_CLARO);
         reloj.add(lblReloj);
-        reloj.add(lblHora);
         fila1.add(reloj, BorderLayout.EAST);
         panel.add(fila1, BorderLayout.NORTH);
 
@@ -192,6 +186,7 @@ public class VentanaPrincipal extends JFrame {
         btnEjecutar     = new Boton("Ejecutar", Tema.VERDE);
         btnPaso         = new Boton("Siguiente", Tema.AZUL);
         btnDetener      = new Boton("Detener", Tema.ROJO);
+        btnLlegadas     = new Boton("Llegadas", Tema.AMBAR);
         btnLimpiar      = new Boton("Limpiar", Tema.GRIS);
         btnEstadisticas = new Boton("Estadísticas", Tema.MORADO);
         btnConfigurar   = new Boton("Configuración", new Color(0x334155));
@@ -200,11 +195,12 @@ public class VentanaPrincipal extends JFrame {
 
         btnCargar.setToolTipText("Cargar uno o varios archivos .asm");
         btnEjecutar.setToolTipText("Ejecutar automáticamente todos los procesos hasta su finalización");
-        btnPaso.setToolTipText("Avanzar 1 segundo de CPU (botón \"siguiente\")");
+        btnPaso.setToolTipText("Avanzar un segundo global en todas las CPU");
         btnDetener.setToolTipText("Pausar la ejecución automática");
         btnDetener.setEnabled(false);
+        btnLlegadas.setToolTipText("Editar los tiempos de llegada de los procesos que todavía no llegan");
 
-        for (Boton b : new Boton[]{btnCargar, btnEjecutar, btnPaso, btnDetener, btnLimpiar, btnEstadisticas, btnConfigurar}) {
+        for (Boton b : new Boton[]{btnCargar, btnEjecutar, btnPaso, btnDetener, btnLlegadas, btnLimpiar, btnEstadisticas, btnConfigurar}) {
             botones.add(b);
         }
         barra.add(botones, BorderLayout.WEST);
@@ -232,6 +228,7 @@ public class VentanaPrincipal extends JFrame {
         btnEjecutar.addActionListener(e -> iniciarAutomatico());
         btnPaso.addActionListener(e -> pasoManual());
         btnDetener.addActionListener(e -> detenerAutomatico(true));
+        btnLlegadas.addActionListener(e -> editarLlegadas());
         btnLimpiar.addActionListener(e -> limpiar());
         btnEstadisticas.addActionListener(e -> mostrarEstadisticas());
         btnConfigurar.addActionListener(e -> mostrarConfiguracion());
@@ -259,11 +256,20 @@ public class VentanaPrincipal extends JFrame {
         g.insets = new Insets(0, 0, 0, 12);
 
         g.gridx = 0; g.weightx = 0.27;
-        cuerpo.add(crearColumnaIzquierda(), g);
+        JPanel izquierda = crearColumnaIzquierda();
+        izquierda.setPreferredSize(new Dimension(380, 700));
+        izquierda.setMinimumSize(new Dimension(300, 0));
+        cuerpo.add(izquierda, g);
         g.gridx = 1; g.weightx = 0.45;
-        cuerpo.add(crearColumnaCentral(), g);
+        JPanel central = crearColumnaCentral();
+        central.setPreferredSize(new Dimension(650, 700));
+        central.setMinimumSize(new Dimension(400, 0));
+        cuerpo.add(central, g);
         g.gridx = 2; g.weightx = 0.28; g.insets = new Insets(0, 0, 0, 0);
-        cuerpo.add(crearColumnaDerecha(), g);
+        JPanel derecha = crearColumnaDerecha();
+        derecha.setPreferredSize(new Dimension(400, 700));
+        derecha.setMinimumSize(new Dimension(320, 0));
+        cuerpo.add(derecha, g);
         return cuerpo;
     }
 
@@ -286,14 +292,18 @@ public class VentanaPrincipal extends JFrame {
 
     // ------------------------- Columna izquierda -------------------------
 
+    // Correccion - Poll: se quita el dispositivo "Teclado (entrada)" (INT 09H ya no se usa)
     private JPanel crearColumnaIzquierda(){
         // Cola de trabajos (lista de trabajos + lista de procesos)
         tarjetaCola = new Tarjeta("Cola de trabajos", Tema.VERDE);
-        modeloCola = new DefaultTableModel(new String[]{"#", "Programa", "Estado", "Base", "Alcance"}, 0) {
+        modeloCola = new DefaultTableModel(new String[]{"#", "Programa", "Estado", "Base", "Alcance", "Ráfaga", "Llegada (s)", "CPU"}, 0) {
             @Override public boolean isCellEditable(int r, int c){ return false; }
         };
         tablaCola = new JTable(modeloCola);
         Componentes.estilizarTabla(tablaCola);
+        tablaCola.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+        tablaCola.getColumnModel().getColumn(5).setPreferredWidth(65);
+        tablaCola.getColumnModel().getColumn(6).setPreferredWidth(85);
         tablaCola.getColumnModel().getColumn(0).setCellRenderer(new RenderProceso());
         tablaCola.getColumnModel().getColumn(2).setCellRenderer(new RenderEstado());
         tablaCola.getColumnModel().getColumn(0).setPreferredWidth(44);
@@ -302,7 +312,10 @@ public class VentanaPrincipal extends JFrame {
         tablaCola.getColumnModel().getColumn(3).setPreferredWidth(50);
         tablaCola.getColumnModel().getColumn(4).setPreferredWidth(60);
         tarjetaCola.getContenido().add(Componentes.scroll(tablaCola), BorderLayout.CENTER);
-        tarjetaCola.getContenido().add(crearLeyendaEstados(), BorderLayout.SOUTH);
+        JScrollPane estados = Componentes.scroll(crearLeyendaEstados());
+        estados.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_NEVER);
+        estados.setPreferredSize(new Dimension(300, 48));
+        tarjetaCola.getContenido().add(estados, BorderLayout.SOUTH);
 
         // Recursos del sistema
         Tarjeta recursos = new Tarjeta("Recursos del sistema", Tema.AZUL);
@@ -322,25 +335,40 @@ public class VentanaPrincipal extends JFrame {
 
         // Dispositivos
         Tarjeta dispositivos = new Tarjeta("Dispositivos", Tema.MORADO);
-        JPanel filas = new JPanel(new GridLayout(4, 1, 0, 6));
+        JPanel filas = new JPanel(new GridLayout(3, 1, 0, 6));
         filas.setOpaque(false);
         dispCPU = new Distintivo();
         dispPantalla = new Distintivo();
-        dispTeclado = new Distintivo();
         dispDisco = new Distintivo();
-        filas.add(filaDispositivo("CPU 1", dispCPU));
+        filas.add(filaDispositivo("CPU ocupadas", dispCPU));
         filas.add(filaDispositivo("Pantalla", dispPantalla));
-        filas.add(filaDispositivo("Teclado (entrada)", dispTeclado));
         filas.add(filaDispositivo("Disco", dispDisco));
-        dispositivos.getContenido().add(filas, BorderLayout.NORTH);
+        modeloCpus = new DefaultTableModel(new String[]{"CPU", "Proceso", "Estado", "PC"}, 0) {
+            @Override public boolean isCellEditable(int r, int c){ return false; }
+        };
+        JTable tablaCpus = new JTable(modeloCpus);
+        Componentes.estilizarTabla(tablaCpus);
+        tablaCpus.setRowHeight(22);
+        tablaCpus.getSelectionModel().addListSelectionListener(e -> {
+            int fila = tablaCpus.getSelectedRow();
+            if (!e.getValueIsAdjusting() && fila >= 0 && fila < cmbCpuDetalle.getItemCount())
+                cmbCpuDetalle.setSelectedIndex(fila);
+        });
+        JScrollPane resumenCpus = Componentes.scroll(tablaCpus);
+        resumenCpus.setPreferredSize(new Dimension(260, 160));
+        resumenCpus.setMinimumSize(new Dimension(220, 160));
+        dispositivos.getContenido().add(resumenCpus, BorderLayout.CENTER);
+        dispositivos.getContenido().add(filas, BorderLayout.SOUTH);
 
         return columna(new Component[]{tarjetaCola, recursos, dispositivos}, new double[]{1.0, 0.0, 0.0});
     }
 
+    // Correccion - Poll (observación PY1): la leyenda incluye "Finalizado con error"
     private JPanel crearLeyendaEstados(){
         JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 6));
         p.setOpaque(false);
-        for (String e : new String[]{"Nuevo", "Preparado", "Ejecución", "En espera", "Suspendido en espera", "Suspendido preparado", "Finalizado"}) {
+        for (String e : new String[]{"Nuevo", "Preparado", "Ejecución", "En espera", "Suspendido en espera",
+                                     "Suspendido preparado", BCP.FINALIZADO, BCP.FINALIZADO_ERROR}) {
             Distintivo d = new Distintivo();
             d.setEstado(e);
             p.add(d);
@@ -363,6 +391,8 @@ public class VentanaPrincipal extends JFrame {
 
     // -------------------------- Columna central --------------------------
 
+    // Correccion - Poll: se quita la línea de entrada del teclado (etiqueta, campo y botón Enviar)
+    // debajo de la pantalla, y la leyenda "(+N virtual)" de la memoria virtual partida
     private JPanel crearColumnaCentral(){
         // Memoria principal: mapa visual + tabla
         tarjetaMemoria = new Tarjeta("Memoria principal", Tema.VERDE);
@@ -376,10 +406,11 @@ public class VentanaPrincipal extends JFrame {
         tablaMemoria.setRowHeight(22);
         RenderMemoria render = new RenderMemoria();
         for (int i = 0; i < 3; i++) tablaMemoria.getColumnModel().getColumn(i).setCellRenderer(render);
-        tablaMemoria.getColumnModel().getColumn(0).setPreferredWidth(70);
-        tablaMemoria.getColumnModel().getColumn(0).setMinWidth(64);
-        tablaMemoria.getColumnModel().getColumn(1).setPreferredWidth(300);
-        tablaMemoria.getColumnModel().getColumn(2).setPreferredWidth(60);
+        tablaMemoria.getColumnModel().getColumn(0).setPreferredWidth(52);
+        tablaMemoria.getColumnModel().getColumn(0).setMinWidth(50);
+        tablaMemoria.getColumnModel().getColumn(1).setPreferredWidth(260);
+        tablaMemoria.getColumnModel().getColumn(2).setPreferredWidth(64);    // "BCP P1"
+        tablaMemoria.getColumnModel().getColumn(2).setMinWidth(60);
 
         JPanel mapaConLeyenda = new JPanel(new BorderLayout(0, 6));
         mapaConLeyenda.setOpaque(false);
@@ -389,17 +420,24 @@ public class VentanaPrincipal extends JFrame {
         leyenda.add(itemLeyenda("S.O. / BCP", Tema.NARANJA_SO));
         leyenda.add(itemLeyenda("Libre", new Color(0xCBD5D0)));
         leyenda.add(itemLeyenda("PC", Tema.ROJO));
-        leyenda.add(itemLeyenda("(+N virtual) = parte en disco", Tema.MORADO));
         mapaConLeyenda.add(leyenda, BorderLayout.SOUTH);
 
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, mapaConLeyenda, Componentes.scroll(tablaMemoria));
-        split.setResizeWeight(0.42);
+        split.setResizeWeight(0.32);   // la tabla necesita espacio para leer los campos del BCP
         split.setBorder(null);
         split.setOpaque(false);
         split.setDividerSize(8);
-        tarjetaMemoria.getContenido().add(split, BorderLayout.CENTER);
+        modeloPaginas = new DefaultTableModel(new String[]{"Proceso", "Página", "Base RAM", "Base disco"}, 0) {
+            @Override public boolean isCellEditable(int r, int c){ return false; }
+        };
+        JTable tablaPaginas = new JTable(modeloPaginas);
+        Componentes.estilizarTabla(tablaPaginas);
+        JTabbedPane vistasMemoria = new JTabbedPane();
+        vistasMemoria.addTab("RAM física", split);
+        vistasMemoria.addTab("Tabla de páginas", Componentes.scroll(tablaPaginas));
+        tarjetaMemoria.getContenido().add(vistasMemoria, BorderLayout.CENTER);
 
-        // Pantalla + teclado
+        // Pantalla
         Tarjeta pantalla = new Tarjeta("Pantalla", new Color(0x0F766E));
         areaPantalla = new JTextPane();
         areaPantalla.setEditable(false);
@@ -407,24 +445,6 @@ public class VentanaPrincipal extends JFrame {
         areaPantalla.setBackground(new Color(0xFBFDFB));
         areaPantalla.setBorder(new EmptyBorder(8, 10, 8, 10));
         pantalla.getContenido().add(Componentes.scroll(areaPantalla), BorderLayout.CENTER);
-
-        JPanel entrada = new JPanel(new BorderLayout(8, 0));
-        entrada.setOpaque(false);
-        entrada.setBorder(new EmptyBorder(8, 0, 0, 0));
-        lblTeclado = new JLabel(">> Ingresar valor:");
-        lblTeclado.setFont(Tema.NEGRITA);
-        lblTeclado.setForeground(Tema.TEXTO_SUAVE);
-        txtTeclado = new JTextField();
-        txtTeclado.setFont(Tema.MONO_NORMAL);
-        txtTeclado.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(Tema.BORDE), new EmptyBorder(6, 8, 6, 8)));
-        btnEnviar = new Boton("Enviar", Tema.AMBAR);
-        entrada.add(lblTeclado, BorderLayout.WEST);
-        entrada.add(txtTeclado, BorderLayout.CENTER);
-        entrada.add(btnEnviar, BorderLayout.EAST);
-        pantalla.getContenido().add(entrada, BorderLayout.SOUTH);
-        txtTeclado.addActionListener(e -> enviarTeclado());
-        btnEnviar.addActionListener(e -> enviarTeclado());
 
         // Disco
         tarjetaDisco = new Tarjeta("Disco", Tema.MORADO);
@@ -459,9 +479,10 @@ public class VentanaPrincipal extends JFrame {
 
     // -------------------------- Columna derecha --------------------------
 
+    // Correccion - Poll: se quita la barra de progreso de la instrucción según su peso
     private JPanel crearColumnaDerecha(){
         // CPU
-        Tarjeta cpu = new Tarjeta("CPU 1", Tema.VERDE);
+        Tarjeta cpu = new Tarjeta("Detalle de CPU", Tema.VERDE);
         JPanel contCPU = new JPanel(new BorderLayout(0, 10));
         contCPU.setOpaque(false);
 
@@ -474,7 +495,21 @@ public class VentanaPrincipal extends JFrame {
         distEstadoCPU.setPreferredSize(new Dimension(110, 24));
         filaProceso.add(lblProcesoActual, BorderLayout.CENTER);
         filaProceso.add(distEstadoCPU, BorderLayout.EAST);
-        contCPU.add(filaProceso, BorderLayout.NORTH);
+        cmbCpuDetalle = new JComboBox<>();
+        cmbCpuDetalle.setFont(Tema.NORMAL);
+        cmbCpuDetalle.setToolTipText("CPU cuyos registros, pila y BCP se muestran abajo");
+        cmbCpuDetalle.addActionListener(e -> {
+            if (gestor != null) {
+                actualizarCPU();
+                actualizarBCP();
+                actualizarMemoria();
+            }
+        });
+        JPanel cabeceraCpu = new JPanel(new BorderLayout(0, 6));
+        cabeceraCpu.setOpaque(false);
+        cabeceraCpu.add(cmbCpuDetalle, BorderLayout.NORTH);
+        cabeceraCpu.add(filaProceso, BorderLayout.SOUTH);
+        contCPU.add(cabeceraCpu, BorderLayout.NORTH);
 
         JPanel registros = new JPanel(new GridLayout(5, 2, 8, 6));
         registros.setOpaque(false);
@@ -492,13 +527,7 @@ public class VentanaPrincipal extends JFrame {
         lblInstruccion = new JLabel("Instrucción en curso: -");
         lblInstruccion.setFont(Tema.PEQUENA);
         lblInstruccion.setForeground(Tema.TEXTO_SUAVE);
-        barraInstruccion = new JProgressBar(0, 1);
-        barraInstruccion.setForeground(Tema.VERDE);
-        barraInstruccion.setBackground(Tema.VERDE_CLARO);
-        barraInstruccion.setBorderPainted(false);
-        barraInstruccion.setPreferredSize(new Dimension(10, 8));
         instr.add(lblInstruccion, BorderLayout.NORTH);
-        instr.add(barraInstruccion, BorderLayout.CENTER);
         contCPU.add(instr, BorderLayout.SOUTH);
         cpu.getContenido().add(contCPU, BorderLayout.CENTER);
 
@@ -512,7 +541,7 @@ public class VentanaPrincipal extends JFrame {
         JPanel datos = new JPanel(new GridBagLayout());
         datos.setOpaque(false);
         String[] campos = {"Proceso", "Estado", "Base", "Alcance", "Prioridad", "CPU",
-                           "Inicio", "Tiempo empleado", "Dirección del BCP", "Archivos abiertos"};
+                           "Inicio", "Tiempo empleado", "Dirección del BCP", "Archivos abiertos", "Ráfaga", "Llegada"};
         GridBagConstraints g = new GridBagConstraints();
         g.anchor = GridBagConstraints.WEST;
         g.insets = new Insets(2, 0, 2, 10);
@@ -539,7 +568,13 @@ public class VentanaPrincipal extends JFrame {
         }
         bcp.getContenido().add(datos, BorderLayout.NORTH);
 
-        return columna(new Component[]{cpu, pila, bcp}, new double[]{0.0, 0.0, 1.0});
+        JPanel detalle = new JPanel(new BorderLayout());
+        detalle.setOpaque(false);
+        JScrollPane scroll = Componentes.scroll(columna(new Component[]{cpu, pila, bcp}, new double[]{0.0, 0.0, 1.0}));
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.getVerticalScrollBar().setUnitIncrement(18);
+        detalle.add(scroll, BorderLayout.CENTER);
+        return detalle;
     }
 
     private JPanel crearRegistro(String nombre, Color color, int indice){
@@ -588,6 +623,7 @@ public class VentanaPrincipal extends JFrame {
         selector.setFileFilter(new FileNameExtensionFilter("Programas ensamblador (*.asm)", "asm"));
         if (selector.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
 
+        detenerAutomatico(false);
         asegurarGestor();
         List<String> errores = new ArrayList<>();
         int cargados = 0;
@@ -595,13 +631,14 @@ public class VentanaPrincipal extends JFrame {
             try {
                 List<Instruccion> instrucciones = ParserASM.leerArchivo(archivo);
                 BCP bcp = gestor.cargarPrograma(instrucciones, archivo.getName());
-                gestor.getCpu().imprimir("[SO] " + archivo.getName() + " cargado como P"
+                gestor.imprimir("[SO] " + archivo.getName() + " cargado como P"
                     + bcp.getIdProceso() + " (" + instrucciones.size() + " instrucciones)");
                 cargados++;
             } catch (Exception e) {
                 errores.add("• " + e.getMessage());
             }
         }
+        if (cargados > 0) configurarLlegadas();
         actualizarVista();
 
         if (!errores.isEmpty()) {
@@ -620,58 +657,98 @@ public class VentanaPrincipal extends JFrame {
         }
     }
 
+    // Botón "Llegadas": edita las llegadas de los procesos que todavía no llegan
+    private void editarLlegadas(){
+        if (gestor == null || gestor.getPendientesLlegada().isEmpty()) {
+            avisar("No hay procesos pendientes de llegar.");
+            return;
+        }
+        configurarLlegadas();
+        actualizarVista();
+    }
+
+    // E: no aplica
+    // S: no aplica (void)
+    // R: solo se muestran los procesos pendientes; al cancelar se conservan sus llegadas
+    private void configurarLlegadas(){
+        List<BCP> procesos = gestor.getPendientesLlegada();
+        int maximo = GestorProcesos.MAX_SEGUNDOS_AUTOMATICO - 1;
+        JPanel campos = new JPanel(new GridLayout(0, 5, 12, 8));
+        campos.add(new JLabel("Proceso / archivo"));
+        campos.add(new JLabel("Ráfaga (líneas)"));
+        campos.add(new JLabel("Llegada (segundos desde 0)"));
+        campos.add(new JLabel("Boletos de Lottery"));
+        campos.add(new JLabel("Prioridad (1 = máxima)"));
+        List<JSpinner> prioridades = new ArrayList<>();
+        List<JSpinner> boletos = new ArrayList<>();
+        List<JSpinner> entradas = new ArrayList<>();
+        for (BCP b : procesos) {
+            campos.add(new JLabel("P" + b.getIdProceso() + " - " + b.getArchivosAbiertos().get(0)));
+            campos.add(new JLabel(String.valueOf(b.getRafaga())));
+            JSpinner entrada = new JSpinner(new SpinnerNumberModel(b.getTiempoLlegada(), gestor.getReloj(), maximo, 1));
+            entradas.add(entrada);
+            campos.add(entrada);
+            JSpinner cantidad = new JSpinner(new SpinnerNumberModel(b.getBoletos(), 1, Integer.MAX_VALUE, 1));
+            boletos.add(cantidad);
+            campos.add(cantidad);
+            JSpinner prioridad = new JSpinner(new SpinnerNumberModel(b.getPrioridad(), 1, Integer.MAX_VALUE, 1));
+            prioridades.add(prioridad);
+            campos.add(prioridad);
+        }
+        JScrollPane scroll = new JScrollPane(campos);
+        scroll.setPreferredSize(new Dimension(980, Math.min(380, 65 + procesos.size() * 35)));
+        while (true) {
+            int opcion = JOptionPane.showConfirmDialog(this, scroll,
+                "Tiempos de llegada · reloj actual: " + gestor.getReloj() + " s",
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+            if (opcion != JOptionPane.OK_OPTION) return; // Conserva las llegadas por defecto.
+            try {
+                for (JSpinner entrada : entradas) entrada.commitEdit();
+                for (JSpinner cantidad : boletos) cantidad.commitEdit();
+                for (JSpinner prioridad : prioridades) prioridad.commitEdit();
+                for (int i = 0; i < procesos.size(); i++)
+                    gestor.configurarLlegada(procesos.get(i), ((Number) entradas.get(i).getValue()).intValue());
+                for (int i = 0; i < procesos.size(); i++)
+                    procesos.get(i).setBoletos(((Number) boletos.get(i).getValue()).intValue());
+                for (int i = 0; i < procesos.size(); i++)
+                    procesos.get(i).setPrioridad(((Number) prioridades.get(i).getValue()).intValue());
+                return;
+            } catch (java.text.ParseException | IllegalArgumentException ex) {
+                avisar("Ingrese llegadas entre " + gestor.getReloj() + " y " + maximo + ", y boletos y prioridades enteros positivos.");
+            }
+        }
+    }
+
+    // Correccion - Poll: ya no se bloquea ni arranca el conteo de espera del teclado
     // Botón "Siguiente": 1 segundo de CPU
     private void pasoManual(){
         if (!validarHayProcesos()) return;
-        if (gestor.bloqueadoPorTeclado()) {
-            // Todos los procesos esperan el teclado: el tiempo ya corre solo; no se suman segundos extra con clics
-            avisar("Todos los procesos están esperando un valor de teclado.\nIngreselo en la Pantalla y presione Enter.");
-            return;
-        }
         gestor.ejecutarUnPaso();
         actualizarVista();
-        if (gestor.bloqueadoPorTeclado()) {
-            iniciarEsperaTeclado();
-        } else if (!gestor.hayProcesos()) {
+        if (!gestor.hayProcesos()) {
             finEjecucion();
         }
     }
 
-    // Arranca el conteo automático de segundos mientras se espera el teclado (modo Siguiente)
-    private void iniciarEsperaTeclado(){
-        if (!modoAutomatico && !timerEspera.isRunning()) timerEspera.start();
-    }
-
-    // Cada segundo real con la CPU ociosa esperando el teclado: suma 1 s al reloj
-    private void segundoDeEspera(){
-        if (gestor == null || !gestor.bloqueadoPorTeclado() || modoAutomatico) {
-            timerEspera.stop();
-            return;
-        }
-        gestor.ejecutarUnPaso();
-        actualizarVista();
-    }
-
+    // Correccion - Poll: se quita el aviso de "un proceso espera un valor de teclado"
     // Botón "Ejecutar": modo automático
     private void iniciarAutomatico(){
         if (!validarHayProcesos()) return;
         if (cmbVelocidad.getSelectedIndex() == 1) {          // instantánea
             gestor.ejecutarTodo();
             actualizarVista();
-            if (gestor.bloqueadoPorTeclado()) {
-                avisar("La ejecución se detuvo: un proceso espera un valor de teclado.");
-            } else if (!gestor.hayProcesos()) {
+            if (!gestor.hayProcesos()) {
                 finEjecucion();
             }
             return;
         }
         modoAutomatico = true;
-        timerEspera.stop();                 // en automático el timer principal cuenta la espera
         timerAuto.setDelay(retardoSeleccionado());
         timerAuto.start();
         actualizarBotones();
     }
 
+    // Correccion - Poll: el timer ya no se detiene esperando el teclado
     private void pasoAutomatico(){
         if (gestor == null || !gestor.hayProcesos()) {
             detenerAutomatico(false);
@@ -679,16 +756,14 @@ public class VentanaPrincipal extends JFrame {
             if (gestor != null) finEjecucion();
             return;
         }
-        if (!gestor.ejecutarUnPaso() && gestor.bloqueadoPorTeclado()) {
-            timerAuto.stop();       // se reanuda solo al ingresar el valor
-        }
+        gestor.ejecutarUnPaso();
         actualizarVista();
     }
 
     private void detenerAutomatico(boolean manual){
         modoAutomatico = false;
         timerAuto.stop();
-        if (manual && gestor != null) gestor.getCpu().imprimir("[SO] Ejecución automática pausada");
+        if (manual && gestor != null) gestor.imprimir("[SO] Ejecución automática pausada");
         actualizarBotones();
         actualizarVista();
     }
@@ -699,27 +774,11 @@ public class VentanaPrincipal extends JFrame {
 
     private void finEjecucion(){
         detenerAutomatico(false);
-        gestor.getCpu().imprimir("[SO] Todos los procesos finalizaron en " + gestor.getReloj() + " s");
+        gestor.imprimir("[SO] Todos los procesos finalizaron en " + gestor.getReloj() + " s");
         actualizarVista();
         int r = JOptionPane.showConfirmDialog(this, "Todos los procesos finalizaron.\n¿Ver estadísticas?",
             "Ejecución completa", JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE);
         if (r == JOptionPane.YES_OPTION) mostrarEstadisticas();
-    }
-
-    private void enviarTeclado(){
-        if (gestor == null || !gestor.esperandoTeclado()) return;
-        String texto = txtTeclado.getText().trim();
-        try {
-            gestor.ingresarTeclado(Integer.parseInt(texto));
-            if (!gestor.bloqueadoPorTeclado()) timerEspera.stop();   // ya hay algo que ejecutar: el reloj deja de correr solo
-            txtTeclado.setText("");
-            if (modoAutomatico && !timerAuto.isRunning()) timerAuto.start();
-        } catch (NumberFormatException e) {
-            avisar("Ingresá un número entero entre 0 y 255.");
-        } catch (RuntimeException e) {
-            avisar(e.getMessage());
-        }
-        actualizarVista();
     }
 
     // E: no aplica
@@ -738,6 +797,7 @@ public class VentanaPrincipal extends JFrame {
         }
     }
 
+    // Correccion - Poll: ya no detiene el timer de espera ni limpia el campo del teclado
     // E: no aplica
     // S: no aplica (void)
     // R: siempre pide confirmación antes de borrar procesos, memoria, disco, pantalla y estadísticas
@@ -754,9 +814,7 @@ public class VentanaPrincipal extends JFrame {
             "Confirmar limpieza", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (r != JOptionPane.YES_OPTION) return;
         detenerAutomatico(false);
-        timerEspera.stop();
         gestor = null;
-        txtTeclado.setText("");
         actualizarVista();
     }
 
@@ -784,6 +842,7 @@ public class VentanaPrincipal extends JFrame {
     // S: no aplica (void)
     // R: refresca todos los paneles con el estado actual del GestorProcesos
     private void actualizarVista(){
+        actualizarResumenCpus();
         actualizarEncabezado();
         actualizarCola();
         actualizarRecursos();
@@ -795,16 +854,40 @@ public class VentanaPrincipal extends JFrame {
         actualizarBotones();
     }
 
+    // Correccion - Poll: se quita la hora real (HH:mm:ss); queda solo el tiempo en segundos desde 0
+    private CPU cpuSeleccionada(){
+        if (gestor == null) return null;
+        int indice = Math.max(0, cmbCpuDetalle.getSelectedIndex());
+        return gestor.getCpu(Math.min(indice, gestor.getCantidadCpus() - 1));
+    }
+
+    private void actualizarResumenCpus(){
+        int cantidad = gestor == null ? configuracion.getCantidadCpus() : gestor.getCantidadCpus();
+        if (cmbCpuDetalle.getItemCount() != cantidad) {
+            cmbCpuDetalle.removeAllItems();
+            for (int i = 1; i <= cantidad; i++) cmbCpuDetalle.addItem("CPU " + i);
+            cmbCpuDetalle.setSelectedIndex(0);
+        }
+        modeloCpus.setRowCount(cantidad);
+        for (int i = 0; i < cantidad; i++) {
+            CPU cpu = gestor == null ? null : gestor.getCpu(i);
+            BCP b = cpu == null ? null : cpu.getBcpActual();
+            modeloCpus.setValueAt("CPU " + (i + 1), i, 0);
+            modeloCpus.setValueAt(b == null ? "-" : "P" + b.getIdProceso(), i, 1);
+            modeloCpus.setValueAt(b == null ? "Ociosa" : "Ejecución", i, 2);
+            modeloCpus.setValueAt(b == null ? "-" : cpu.getPC(), i, 3);
+        }
+    }
+
     private void actualizarEncabezado(){
         if (gestor == null) {
             ((Distintivo) lblReloj).setColores("Tiempo  0 s", Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
-            ((Distintivo) lblHora).setColores("--:--:--", Tema.AZUL, Tema.AZUL_CLARO);
             return;
         }
         ((Distintivo) lblReloj).setColores("Tiempo  " + gestor.getReloj() + " s", Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
-        ((Distintivo) lblHora).setColores("Hora  " + gestor.getHoraSimulada(), Tema.AZUL, Tema.AZUL_CLARO);
     }
 
+    // Correccion - Poll (observación PY1): "Finalizado con error" también oculta la base, igual que "Finalizado"
     private void actualizarCola(){
         modeloCola.setRowCount(0);
         if (gestor == null) {
@@ -816,25 +899,32 @@ public class VentanaPrincipal extends JFrame {
                 b.getIdProceso(),
                 b.getArchivosAbiertos().isEmpty() ? "-" : b.getArchivosAbiertos().get(0),
                 b.getEstado(),
-                b.getDireccionBase() >= 0 && !"Finalizado".equals(b.getEstado()) ? b.getDireccionBase() : "-",
-                b.getTamanioProceso()
+                b.getDireccionBase() >= 0 && !b.estaFinalizado() ? b.getDireccionBase() : "-",
+                b.getTamanioProceso(),
+                b.getRafaga(),
+                b.getTiempoLlegada(),
+                b.getCpuId() > 0 ? "CPU " + b.getCpuId() : "-"
             });
         }
         int trabajos = gestor.getPlanificador().getListaTrabajos().tamanio();
         tarjetaCola.setExtra(gestor.getTodosLosProcesos().size() + " procesos · " + trabajos + " esperando memoria");
     }
 
+    // Correccion - Poll: se quita el estado del dispositivo teclado, y la memoria usada se cuenta
+    // con el alcance completo del proceso (ya no hay parte en memoria virtual)
+    // Correccion - Poll (observación PY1): la capacidad de la zona del S.O. se cuenta en bloques de
+    // BCP (16 posiciones cada uno), no en posiciones sueltas
     private void actualizarRecursos(){
         if (gestor == null) {
             int usuario = configuracion.getMemoriaPrincipal() - configuracion.getMemoriaSistema();
-            barraProcesos.setValor(0, Planificador.MAX_PROCESOS_EN_MEMORIA);
+            barraProcesos.setValor(0, Planificador.MAX_PROCESOS_EN_MEMORIA * configuracion.getCantidadCpus());
             barraMemoria.setValor(0, usuario);
-            barraBCP.setValor(0, Math.min(Planificador.MAX_PROCESOS_EN_MEMORIA, configuracion.getMemoriaSistema()));
+            barraBCP.setValor(0, Math.min(Planificador.MAX_PROCESOS_EN_MEMORIA * configuracion.getCantidadCpus(),
+                configuracion.getMemoriaSistema() / BCP.TAMANO_BLOQUE));
             barraDisco.setValor(0, configuracion.getAlmacenamientoSecundario());
             barraVirtual.setValor(0, configuracion.getMemoriaVirtual());
             dispCPU.setColores("Libre", Tema.GRIS, Tema.GRIS_CLARO);
             dispPantalla.setColores("Lista", Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
-            dispTeclado.setColores("Libre", Tema.GRIS, Tema.GRIS_CLARO);
             dispDisco.setColores("Sin archivos", Tema.GRIS, Tema.GRIS_CLARO);
             return;
         }
@@ -844,11 +934,12 @@ public class VentanaPrincipal extends JFrame {
         int usuarioUsado = 0, bcps = 0;
         for (BCP b : gestor.getTodosLosProcesos()) {
             String e = b.getEstado();
-            if (!"Nuevo".equals(e) && !"Finalizado".equals(e)) {
-                usuarioUsado += b.getEnRAM();
+            if (!"Nuevo".equals(e) && !b.estaFinalizado()) {
+                // La reserva física puede incluir fragmentación o solo algunas páginas.
                 if (b.getDireccionBCP() >= 0) bcps++;
             }
         }
+        usuarioUsado = gestor.getGestorMemoria().getReservadoRam();
         int discoUsado = 0, archivos = 0;
         for (int i = 0; i < d.getTamanoTotal(); i++) {
             String v = d.leer(i);
@@ -857,28 +948,27 @@ public class VentanaPrincipal extends JFrame {
                 if (i < d.getTamanoIndice()) archivos++;
             }
         }
-        barraProcesos.setValor(gestor.procesosEnMemoria(), Planificador.MAX_PROCESOS_EN_MEMORIA);
+        barraProcesos.setValor(gestor.procesosEnMemoria(), gestor.getPlanificador().getMaxProcesosEnMemoria());
         barraMemoria.setValor(usuarioUsado, usuarioTotal);
-        barraBCP.setValor(bcps, Math.min(Planificador.MAX_PROCESOS_EN_MEMORIA, m.getInicioUsuario()));
+        barraBCP.setValor(bcps, gestor.getPlanificador().getCapacidadBCP());
         barraDisco.setValor(discoUsado, d.getTamanoTotal());
         barraVirtual.setValor(d.virtualUsada(), d.getTamanoMemoriaVirtual());
 
-        BCP enCpu = gestor.getCpu().getBcpActual();
-        if (enCpu != null) dispCPU.setColores("Ejecutando P" + enCpu.getIdProceso(), Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
-        else dispCPU.setColores("Libre", Tema.GRIS, Tema.GRIS_CLARO);
+        int ocupadas = gestor.getCpusOcupadas();
+        dispCPU.setColores(ocupadas + "/" + gestor.getCantidadCpus() + " ejecutando",
+            ocupadas > 0 ? Tema.VERDE_OSCURO : Tema.GRIS,
+            ocupadas > 0 ? Tema.VERDE_CLARO : Tema.GRIS_CLARO);
 
-        dispPantalla.setColores(gestor.getCpu().getPantalla().isEmpty() ? "Lista" : "Mostrando salida",
+        dispPantalla.setColores(gestor.getPantalla().isEmpty() ? "Lista" : "Mostrando salida",
             Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
-
-        BCP esperando = gestor.getProcesoEsperandoTeclado();
-        if (esperando != null) dispTeclado.setColores("Esperando P" + esperando.getIdProceso(), Tema.AMBAR, Tema.AMBAR_CLARO);
-        else dispTeclado.setColores("Libre", Tema.GRIS, Tema.GRIS_CLARO);
 
         dispDisco.setColores(archivos + " archivo(s)", Tema.MORADO, Tema.MORADO_CLARO);
     }
 
+    // Correccion - Poll: ya no muestra "N de M s" según el peso; cada instrucción dura 1 s.
+    // Tampoco muestra "desde memoria virtual" (memoria virtual partida)
     private void actualizarCPU(){
-        CPU cpu = gestor == null ? null : gestor.getCpu();
+        CPU cpu = gestor == null ? null : cpuSeleccionada();
         BCP actual = cpu == null ? null : cpu.getBcpActual();
 
         if (actual == null) {
@@ -897,8 +987,6 @@ public class VentanaPrincipal extends JFrame {
             valoresRegistro[7].setText("-");
             valoresRegistro[6].setFont(Tema.MONO_GRANDE);
             lblInstruccion.setText("Instrucción en curso: -");
-            barraInstruccion.setMaximum(1);
-            barraInstruccion.setValue(0);
             return;
         }
         valoresRegistro[0].setText(String.valueOf(cpu.getPC()));
@@ -918,25 +1006,18 @@ public class VentanaPrincipal extends JFrame {
         valoresRegistro[8].setText(String.format("%d (%02XH)", cpu.getAH(), cpu.getAH()));
         valoresRegistro[9].setText(String.valueOf(cpu.getAL()));
 
-        int restantes = cpu.getSegundosRestantes();
-        if (actual != null && restantes > 0) {
-            String[] partes = cpu.getIR().trim().split("[,\\s]+");
-            int peso = minipc.hardware.Pesos.de(partes[0], partes.length > 1 ? partes[1] : null);
-            boolean desdeVirtual = actual.usaMemoriaVirtual()
-                && cpu.getPC() - 1 - actual.getDireccionBase() >= actual.getEnRAM();
-            lblInstruccion.setText("Ejecutando " + cpu.getIR() + "  ·  " + (peso - restantes) + " de " + peso + " s"
-                + (desdeVirtual ? "  ·  desde memoria virtual" : ""));
-            barraInstruccion.setMaximum(peso);
-            barraInstruccion.setValue(peso - restantes);
+        if (actual != null && cpu.getIR() != null && !cpu.getIR().isEmpty()) {
+            lblInstruccion.setText("Última instrucción: " + cpu.getIR() + "  ·  1 s");
         } else {
-            lblInstruccion.setText(actual == null ? "Instrucción en curso: -" : "Lista para la siguiente instrucción");
-            barraInstruccion.setMaximum(1);
-            barraInstruccion.setValue(actual == null ? 0 : 1);
+            lblInstruccion.setText(actual == null ? "Instrucción en curso: -" : "Lista para la primera instrucción");
         }
     }
 
+    // Correccion - Poll: el tiempo de inicio se muestra en segundos desde 0, no en hora real,
+    // y el alcance ya no se divide en "RAM + virtual"
+    // Correccion - Poll (observación PY1): la dirección del BCP muestra el bloque completo que ocupa
     private void actualizarBCP(){
-        BCP b = (gestor == null) ? null : gestor.getCpu().getBcpActual();
+        BCP b = (gestor == null) ? null : cpuSeleccionada().getBcpActual();
         panelPila.setBCP(b);
         if (b == null) {
             for (JLabel l : valoresBCP) if (l != null) l.setText("-");
@@ -945,22 +1026,30 @@ public class VentanaPrincipal extends JFrame {
         }
         valoresBCP[0].setText("P" + b.getIdProceso());
         distEstadoBCP.setEstado(b.getEstado());
-        valoresBCP[2].setText(String.valueOf(b.getDireccionBase()));
-        valoresBCP[3].setText(b.usaMemoriaVirtual()
-            ? b.getTamanioProceso() + " (" + b.getEnRAM() + " RAM + " + b.getEnVirtual() + " virtual)"
-            : b.getTamanioProceso() + " posiciones");
+        valoresBCP[2].setText(gestor.getGestorMemoria().getEstrategia().esPaginada()
+            ? "0 (lógica)" : String.valueOf(b.getDireccionBase()));
+        valoresBCP[3].setText(b.getTamanioProceso() + " posiciones");
         valoresBCP[4].setText(String.valueOf(b.getPrioridad()));
         valoresBCP[5].setText("CPU " + b.getCpuId());
-        valoresBCP[6].setText(b.getTiempoInicio() >= 0 ? gestor.horaDe(b.getTiempoInicio()) : "-");
+        valoresBCP[6].setText(b.getTiempoInicio() >= 0 ? "t = " + b.getTiempoInicio() + " s" : "-");
         valoresBCP[7].setText(b.getTiempoEmpleado() + " s");
-        valoresBCP[8].setText(b.getDireccionBCP() >= 0 ? "Memoria[" + b.getDireccionBCP() + "]" : "-");
+        valoresBCP[8].setText(b.getDireccionBCP() >= 0
+            ? "Memoria[" + b.getDireccionBCP() + "–" + (b.getDireccionBCP() + BCP.TAMANO_BLOQUE - 1) + "]" : "-");
         valoresBCP[9].setText(String.join(", ", b.getArchivosAbiertos()));
+        valoresBCP[10].setText(b.getRafaga() + " líneas");
+        valoresBCP[11].setText("t = " + b.getTiempoLlegada() + " s");
     }
 
+    // Correccion - Poll: el dueño de cada posición usa el alcance completo y el PC siempre está
+    // en RAM (ya no hay parte del programa en memoria virtual)
+    // Correccion - Poll (observación PY1): las 16 posiciones del bloque de cada BCP se marcan como
+    // suyas ("BCP P1"); el valor de cada posición ya dice qué campo es ("PC=82")
     private void actualizarMemoria(){
         mapaMemoria.setGestor(gestor);
         int total = gestor == null ? configuracion.getMemoriaPrincipal() : gestor.getMemoria().getTamanoTotal();
-        tarjetaMemoria.setExtra(total + " posiciones");
+        tarjetaMemoria.setExtra(gestor == null ? configuracion.getEstrategiaMemoria().toString()
+            : gestor.getGestorMemoria().getEstrategia() + " · fallos " + gestor.getGestorMemoria().getFallosPagina());
+        modeloPaginas.setRowCount(0);
         if (gestor == null) {
             modeloMemoria.setRowCount(0);
             duenoPosicion = new String[0];
@@ -972,13 +1061,21 @@ public class VentanaPrincipal extends JFrame {
         for (int i = 0; i < total; i++) duenoPosicion[i] = i < m.getInicioUsuario() ? "S.O." : "";
         for (BCP b : gestor.getTodosLosProcesos()) {
             String e = b.getEstado();
-            if ("Nuevo".equals(e) || "Finalizado".equals(e) || b.getDireccionBase() < 0) continue;
-            for (int i = b.getDireccionBase(); i < b.getDireccionBase() + b.getEnRAM() && i < total; i++) {
-                duenoPosicion[i] = "P" + b.getIdProceso();
+            if ("Nuevo".equals(e) || b.estaFinalizado() || b.getDireccionBase() < 0) continue;
+            if (b.getDireccionBCP() >= 0) {
+                for (int k = 0; k < BCP.TAMANO_BLOQUE && b.getDireccionBCP() + k < total; k++) {
+                    duenoPosicion[b.getDireccionBCP() + k] = "BCP P" + b.getIdProceso();
+                }
             }
-            if (b.getDireccionBCP() >= 0) duenoPosicion[b.getDireccionBCP()] = "BCP P" + b.getIdProceso();
         }
 
+        for (GestorMemoria.Bloque bloque : gestor.getGestorMemoria().getBloquesFisicos()) {
+            for (int i = 0; i < bloque.tamanio(); i++)
+                duenoPosicion[bloque.base() + i] = (i < bloque.instrucciones() ? "P" : "Interna P") + bloque.proceso().getIdProceso();
+        }
+        for (GestorMemoria.Pagina pagina : gestor.getGestorMemoria().getPaginas())
+            modeloPaginas.addRow(new Object[]{"P" + pagina.proceso().getIdProceso(), pagina.numero(),
+                pagina.baseRam() < 0 ? "-" : pagina.baseRam(), pagina.baseDisco() < 0 ? "-" : pagina.baseDisco()});
         if (modeloMemoria.getRowCount() != total) modeloMemoria.setRowCount(total);
         for (int i = 0; i < total; i++) {
             modeloMemoria.setValueAt(i, i, 0);
@@ -986,8 +1083,11 @@ public class VentanaPrincipal extends JFrame {
             modeloMemoria.setValueAt(duenoPosicion[i], i, 2);
         }
 
-        BCP actual = gestor.getCpu().getBcpActual();
-        int nuevoPC = (actual == null || gestor.getCpu().posicionVirtualPC() >= 0) ? -1 : gestor.getCpu().getPC();
+        BCP actual = cpuSeleccionada().getBcpActual();
+        int nuevoPC = actual == null ? -1 : gestor.getGestorMemoria().direccionFisica(
+            actual, cpuSeleccionada().getPC() - actual.getDireccionBase());
+        valoresRegistro[0].setToolTipText(gestor.getGestorMemoria().getEstrategia().esPaginada()
+            ? "PC lógico. La tabla de páginas traduce a RAM o disco." : "Dirección física de la siguiente instrucción");
         if (nuevoPC != posicionPC && nuevoPC >= 0 && nuevoPC < total) {
             tablaMemoria.scrollRectToVisible(tablaMemoria.getCellRect(Math.min(total - 1, nuevoPC + 3), 0, true));
             tablaMemoria.scrollRectToVisible(tablaMemoria.getCellRect(nuevoPC, 0, true));
@@ -996,6 +1096,8 @@ public class VentanaPrincipal extends JFrame {
         tablaMemoria.repaint();
     }
 
+    // Correccion - Poll: la zona virtual del disco ya no marca partes de procesos ni sigue al PC
+    // (memoria virtual partida); queda reservada para la paginación
     private void actualizarDisco(){
         if (gestor == null) {
             modeloDisco.setRowCount(0);
@@ -1007,36 +1109,30 @@ public class VentanaPrincipal extends JFrame {
         tarjetaDisco.setExtra(total + " · " + d.virtualUsada() + "/" + d.getTamanoMemoriaVirtual() + " virtual");
         if (modeloDisco.getRowCount() != total) modeloDisco.setRowCount(total);
         int inicioVirtual = total - d.getTamanoMemoriaVirtual();
-        String[] duenoVirtual = new String[total];
-        for (BCP b : gestor.getTodosLosProcesos()) {
-            if (!b.usaMemoriaVirtual() || "Finalizado".equals(b.getEstado())) continue;
-            for (int i = b.getBaseVirtual(); i < b.getBaseVirtual() + b.getEnVirtual() && i < total; i++) {
-                duenoVirtual[i] = "Virtual P" + b.getIdProceso();
+        String[] duenosVirtuales = new String[total];
+        for (GestorMemoria.Pagina pagina : gestor.getGestorMemoria().getPaginas()) {
+            if (pagina.baseDisco() >= 0) {
+                int tamano = configuracion.getTamanoPagina();
+                for (int k = 0; k < tamano; k++) duenosVirtuales[pagina.baseDisco() + k] = "P"
+                    + pagina.proceso().getIdProceso() + " pág " + pagina.numero();
             }
         }
-        int nuevoPCVirtual = gestor.getCpu().posicionVirtualPC();
         for (int i = 0; i < total; i++) {
-            String zona = i < d.getTamanoIndice() ? "Índice"
-                : (i >= inicioVirtual ? (duenoVirtual[i] != null ? duenoVirtual[i] : "Virtual") : "Archivos");
+            String zona = i < d.getTamanoIndice() ? "Índice" : (i >= inicioVirtual ? "Virtual" : "Archivos");
             modeloDisco.setValueAt(i, i, 0);
             modeloDisco.setValueAt(d.leer(i), i, 1);
-            modeloDisco.setValueAt(zona, i, 2);
+            modeloDisco.setValueAt(duenosVirtuales[i] == null ? zona : duenosVirtuales[i], i, 2);
         }
-        if (nuevoPCVirtual >= 0 && nuevoPCVirtual != posicionPCVirtual) {
-            tablaDisco.scrollRectToVisible(tablaDisco.getCellRect(Math.min(total - 1, nuevoPCVirtual + 3), 0, true));
-            tablaDisco.scrollRectToVisible(tablaDisco.getCellRect(nuevoPCVirtual, 0, true));
-        }
-        posicionPCVirtual = nuevoPCVirtual;
         tablaDisco.repaint();
     }
 
+    // Correccion - Poll: se quita la habilitación del campo de teclado según el proceso en espera
     private void actualizarPantalla(){
         StyledDocument doc = areaPantalla.getStyledDocument();
         areaPantalla.setText("");
-        boolean esperando = gestor != null && gestor.esperandoTeclado();
 
         if (gestor != null) {
-            for (String linea : gestor.getCpu().getPantalla()) {
+            for (String linea : gestor.getPantalla()) {
                 SimpleAttributeSet a = new SimpleAttributeSet();
                 StyleConstants.setFontFamily(a, Tema.MONO_NORMAL.getFamily());
                 StyleConstants.setFontSize(a, 13);
@@ -1053,7 +1149,7 @@ public class VentanaPrincipal extends JFrame {
                     StyleConstants.setForeground(a, Tema.VERDE_OSCURO);
                     StyleConstants.setBold(a, true);
                 } else {
-                    StyleConstants.setForeground(a, Tema.AZUL);   // valores ingresados por teclado
+                    StyleConstants.setForeground(a, Tema.AZUL);
                 }
                 try {
                     doc.insertString(doc.getLength(), linea + "\n", a);
@@ -1061,20 +1157,6 @@ public class VentanaPrincipal extends JFrame {
             }
         }
         areaPantalla.setCaretPosition(doc.getLength());
-
-        txtTeclado.setEnabled(esperando);
-        btnEnviar.setEnabled(esperando);
-        if (esperando) {
-            BCP b = gestor.getProcesoEsperandoTeclado();
-            lblTeclado.setText(">> P" + b.getIdProceso() + " valor (0-255):");
-            lblTeclado.setForeground(Tema.AMBAR);
-            txtTeclado.setBackground(Tema.AMBAR_CLARO);
-            txtTeclado.requestFocusInWindow();
-        } else {
-            lblTeclado.setText(">> Ingresar valor:");
-            lblTeclado.setForeground(Tema.TEXTO_SUAVE);
-            txtTeclado.setBackground(Color.WHITE);
-        }
     }
 
     private void actualizarBotones(){
@@ -1083,6 +1165,7 @@ public class VentanaPrincipal extends JFrame {
         btnEjecutar.setEnabled(!corriendo);
         btnPaso.setEnabled(!corriendo);
         btnCargar.setEnabled(!corriendo);
+        btnLlegadas.setEnabled(!corriendo);
         btnConfigurar.setEnabled(!corriendo);
     }
 
@@ -1154,39 +1237,85 @@ public class VentanaPrincipal extends JFrame {
         return t;
     }
 
+    // Correccion - Poll: la zona del S.O. y la memoria virtual se pueden editar; ya no se
+    // calculan con porcentajes fijos (25 % y 12,5 %)
     private void mostrarConfiguracion(){
+        if (gestor != null && gestor.getReloj() > 0 && gestor.hayProcesos()) {
+            avisar("La cantidad de CPU se configura antes de ejecutar. Usá Limpiar para iniciar otra simulación.");
+            return;
+        }
         JDialog dlg = new JDialog(this, "Configuración del Mini PC", true);
         Tarjeta t = new Tarjeta("Tamaños (se guardan en " + ConfiguracionSistema.ARCHIVO_POR_DEFECTO + ")", Tema.VERDE);
-        JPanel campos = new JPanel(new GridLayout(4, 2, 10, 10));
+        JPanel campos = new JPanel(new GridLayout(9, 2, 10, 10));
         campos.setOpaque(false);
+        JSpinner cantidadCpus = new JSpinner(new SpinnerNumberModel(configuracion.getCantidadCpus(), 1, GestorProcesos.MAX_CPUS, 1));
+        campos.add(etiqueta("Cantidad de CPU (1 a 5)")); campos.add(cantidadCpus);
+        JComboBox<String> algoritmoCpu = new JComboBox<>(new String[]{"FCFS", "SRT", "SPN", "RR", "HRRN", "SRR", "Lottery", "Prioridad", "Guaranteed", "MLFQ"});
+        algoritmoCpu.setSelectedItem(configuracion.getAlgoritmoCpu());
+        campos.add(etiqueta("Algoritmo de CPU")); campos.add(algoritmoCpu);
+        JSpinner quantumRR = new JSpinner(new SpinnerNumberModel(configuracion.getQuantumRR(), 1, Integer.MAX_VALUE, 1));
+        quantumRR.setEnabled(("RR".equals(algoritmoCpu.getSelectedItem()) || "SRR".equals(algoritmoCpu.getSelectedItem()) || "Lottery".equals(algoritmoCpu.getSelectedItem()) || "MLFQ".equals(algoritmoCpu.getSelectedItem())));
+        algoritmoCpu.addActionListener(e -> quantumRR.setEnabled(("RR".equals(algoritmoCpu.getSelectedItem()) || "SRR".equals(algoritmoCpu.getSelectedItem()) || "Lottery".equals(algoritmoCpu.getSelectedItem()) || "MLFQ".equals(algoritmoCpu.getSelectedItem()))));
+        campos.add(etiqueta("Quantum RR / SRR / Lottery / base MLFQ (s)")); campos.add(quantumRR);
+        JSpinner nivelesMLFQ = new JSpinner(new SpinnerNumberModel(configuracion.getNivelesMLFQ(), 2, 8, 1));
+        JSpinner boostMLFQ = new JSpinner(new SpinnerNumberModel(configuracion.getPeriodoBoostMLFQ(), 1, Integer.MAX_VALUE, 1));
+        Runnable habilitarMLFQ = () -> {
+            boolean seleccionado = "MLFQ".equals(algoritmoCpu.getSelectedItem());
+            nivelesMLFQ.setEnabled(seleccionado);
+            boostMLFQ.setEnabled(seleccionado);
+        };
+        algoritmoCpu.addActionListener(e -> habilitarMLFQ.run());
+        habilitarMLFQ.run();
+        campos.add(etiqueta("Niveles MLFQ (2 a 8)")); campos.add(nivelesMLFQ);
+        campos.add(etiqueta("Promoción global MLFQ (s)")); campos.add(boostMLFQ);
         JTextField mp = campo(configuracion.getMemoriaPrincipal());
         JTextField ms = campo(configuracion.getMemoriaSistema());
         JTextField as = campo(configuracion.getAlmacenamientoSecundario());
         JTextField mv = campo(configuracion.getMemoriaVirtual());
-        // La zona del S.O. y la memoria virtual se calculan solas (no se editan)
-        for (JTextField calc : new JTextField[]{ms, mv}) {
-            calc.setEditable(false);
-            calc.setBackground(Tema.GRIS_CLARO);
-            calc.setForeground(Tema.TEXTO_SUAVE);
-        }
-        Runnable recalcular = () -> {
-            try { ms.setText(String.valueOf(ConfiguracionSistema.calcularZonaSO(Integer.parseInt(mp.getText().trim())))); }
-            catch (NumberFormatException ex) { ms.setText("-"); }
-            try { mv.setText(String.valueOf(ConfiguracionSistema.calcularMemoriaVirtual(Integer.parseInt(as.getText().trim())))); }
-            catch (NumberFormatException ex) { mv.setText("-"); }
-        };
-        javax.swing.event.DocumentListener alCambiar = new javax.swing.event.DocumentListener() {
-            @Override public void insertUpdate(javax.swing.event.DocumentEvent e){ recalcular.run(); }
-            @Override public void removeUpdate(javax.swing.event.DocumentEvent e){ recalcular.run(); }
-            @Override public void changedUpdate(javax.swing.event.DocumentEvent e){ recalcular.run(); }
-        };
-        mp.getDocument().addDocumentListener(alCambiar);
-        as.getDocument().addDocumentListener(alCambiar);
         campos.add(etiqueta("Memoria principal"));               campos.add(mp);
-        campos.add(etiqueta("Zona del S.O. (25 %)"));            campos.add(ms);
+        campos.add(etiqueta("Zona del S.O."));                   campos.add(ms);
         campos.add(etiqueta("Almacenamiento secundario"));       campos.add(as);
-        campos.add(etiqueta("Memoria virtual (12,5 % disco)"));  campos.add(mv);
-        t.getContenido().add(campos, BorderLayout.CENTER);
+        campos.add(etiqueta("Memoria virtual (en disco)"));      campos.add(mv);
+        JComboBox<EstrategiaMemoria> estrategiaMemoria = new JComboBox<>(EstrategiaMemoria.values());
+        estrategiaMemoria.setSelectedItem(configuracion.getEstrategiaMemoria());
+        JTextField tamanoPagina = campo(configuracion.getTamanoPagina());
+        JTextField tamanoParticion = campo(configuracion.getTamanoParticion());
+        JTextField particiones = new JTextField(configuracion.getListaParticiones());
+        JPanel asignacion = new JPanel(new GridLayout(4, 2, 10, 10));
+        asignacion.setOpaque(false);
+        asignacion.add(etiqueta("Estrategia")); asignacion.add(estrategiaMemoria);
+        asignacion.add(etiqueta("Tamaño de página (posiciones)")); asignacion.add(tamanoPagina);
+        asignacion.add(etiqueta("Tamaño de partición igual")); asignacion.add(tamanoParticion);
+        asignacion.add(etiqueta("Particiones diferentes (ej. 16,32,64)")); asignacion.add(particiones);
+        Runnable habilitarMemoria = () -> {
+            EstrategiaMemoria estrategia = (EstrategiaMemoria) estrategiaMemoria.getSelectedItem();
+            tamanoPagina.setEnabled(estrategia.esPaginada());
+            tamanoParticion.setEnabled(estrategia == EstrategiaMemoria.FIJA_IGUAL);
+            particiones.setEnabled(estrategia == EstrategiaMemoria.FIJA_VARIABLE);
+        };
+        estrategiaMemoria.addActionListener(e -> habilitarMemoria.run());
+        habilitarMemoria.run();
+        JPanel panelAsignacion = new JPanel(new BorderLayout(0, 12));
+        panelAsignacion.setOpaque(false);
+        panelAsignacion.add(asignacion, BorderLayout.NORTH);
+        JLabel nota = etiqueta("<html>Los tamaños usan posiciones de memoria. Cada línea ocupa una posición.<br>"
+            + "Paginación virtual usa FIFO y requiere un marco en RAM.<br>"
+            + "Los restos de páginas y particiones se reservan como fragmentación interna.<br>"
+            + "La zona sobrante que no forma una partición o marco completo queda sin asignar.</html>");
+        panelAsignacion.add(nota, BorderLayout.CENTER);
+        JTabbedPane pestanasConfiguracion = new JTabbedPane();
+        pestanasConfiguracion.addTab("CPU y tamaños", campos);
+        pestanasConfiguracion.addTab("Asignación de memoria", panelAsignacion);
+        t.getContenido().add(pestanasConfiguracion, BorderLayout.CENTER);
+        JLabel capacidad = etiqueta("");
+        Runnable mostrarCapacidad = () -> {
+            int n = ((Number) cantidadCpus.getValue()).intValue();
+            capacidad.setText("Hasta " + (5 * n) + " procesos; " + (5 * n * BCP.TAMANO_BLOQUE)
+                + " posiciones de S.O. para sus BCP (además de la RAM de usuario).");
+        };
+        cantidadCpus.addChangeListener(e -> mostrarCapacidad.run());
+        mostrarCapacidad.run();
+        t.getContenido().add(capacidad, BorderLayout.SOUTH);
 
         Boton cargar = new Boton("Cargar archivo...", Tema.GRIS);
         Boton aplicar = new Boton("Guardar y aplicar", Tema.VERDE);
@@ -1197,10 +1326,19 @@ public class VentanaPrincipal extends JFrame {
             if (sel.showOpenDialog(dlg) == JFileChooser.APPROVE_OPTION) {
                 try {
                     configuracion.cargarDesdeArchivo(sel.getSelectedFile());
+                    cantidadCpus.setValue(configuracion.getCantidadCpus());
+                    algoritmoCpu.setSelectedItem(configuracion.getAlgoritmoCpu());
+                    quantumRR.setValue(configuracion.getQuantumRR());
+                    nivelesMLFQ.setValue(configuracion.getNivelesMLFQ());
+                    boostMLFQ.setValue(configuracion.getPeriodoBoostMLFQ());
                     mp.setText(String.valueOf(configuracion.getMemoriaPrincipal()));
                     ms.setText(String.valueOf(configuracion.getMemoriaSistema()));
                     as.setText(String.valueOf(configuracion.getAlmacenamientoSecundario()));
                     mv.setText(String.valueOf(configuracion.getMemoriaVirtual()));
+                    estrategiaMemoria.setSelectedItem(configuracion.getEstrategiaMemoria());
+                    tamanoPagina.setText(String.valueOf(configuracion.getTamanoPagina()));
+                    tamanoParticion.setText(String.valueOf(configuracion.getTamanoParticion()));
+                    particiones.setText(configuracion.getListaParticiones());
                 } catch (Exception ex) {
                     JOptionPane.showMessageDialog(dlg, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
                 }
@@ -1209,11 +1347,25 @@ public class VentanaPrincipal extends JFrame {
 
         aplicar.addActionListener(e -> {
             try {
-                configuracion.setTamanos(
-                    Integer.parseInt(mp.getText().trim()), Integer.parseInt(as.getText().trim()));
+                cantidadCpus.commitEdit();
+                if (quantumRR.isEnabled()) quantumRR.commitEdit();
+                if (nivelesMLFQ.isEnabled()) {
+                    nivelesMLFQ.commitEdit();
+                    boostMLFQ.commitEdit();
+                }
+                configuracion.setConfiguracionMemoria(
+                    Integer.parseInt(mp.getText().trim()), Integer.parseInt(ms.getText().trim()),
+                    Integer.parseInt(as.getText().trim()), Integer.parseInt(mv.getText().trim()),
+                    (EstrategiaMemoria) estrategiaMemoria.getSelectedItem(),
+                    Integer.parseInt(tamanoPagina.getText().trim()), Integer.parseInt(tamanoParticion.getText().trim()),
+                    particiones.getText());
+                configuracion.setCantidadCpus(((Number) cantidadCpus.getValue()).intValue());
+                configuracion.setAlgoritmoCpu((String) algoritmoCpu.getSelectedItem());
+                configuracion.setQuantumRR((Integer) quantumRR.getValue());
+                configuracion.setParametrosMLFQ((Integer) nivelesMLFQ.getValue(), (Integer) boostMLFQ.getValue());
                 configuracion.guardarEnArchivo(new File(ConfiguracionSistema.ARCHIVO_POR_DEFECTO));
             } catch (NumberFormatException ex) {
-                JOptionPane.showMessageDialog(dlg, "La memoria principal y el disco deben ser números enteros.", "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(dlg, "Los cuatro tamaños deben ser números enteros.", "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(dlg, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
@@ -1306,12 +1458,18 @@ public class VentanaPrincipal extends JFrame {
             l.setFont(c == 1 ? Tema.MONO_NORMAL : (esPC ? Tema.NEGRITA : Tema.NORMAL));
             l.setBorder(new EmptyBorder(0, 8, 0, 8));
             if (c == 0 && esPC) l.setText("▶ " + v);
+            // Correccion - Poll (observación PY1): al pasar el mouse se ve el valor completo de la
+            // posición (los campos del BCP pueden ser más largos que la columna)
+            l.setToolTipText(dueno.isEmpty() ? String.valueOf(t.getModel().getValueAt(r, 1))
+                : dueno + "  ·  " + t.getModel().getValueAt(r, 1));
             return l;
         }
     }
 
     /** Tabla de disco: índice en verde, memoria virtual en morado. */
     private class RenderDisco extends DefaultTableCellRenderer {
+        // Correccion - Poll: se quitan el color por proceso en la zona virtual y la marca del PC
+        // (memoria virtual partida)
         @Override
         public Component getTableCellRendererComponent(JTable t, Object v, boolean s, boolean f, int r, int c){
             JLabel l = (JLabel) super.getTableCellRendererComponent(t, v, s, f, r, c);
@@ -1319,20 +1477,12 @@ public class VentanaPrincipal extends JFrame {
             String valor = String.valueOf(t.getModel().getValueAt(r, 1));
             Color fondo = Color.WHITE;
             if ("Índice".equals(zona)) fondo = valor.isEmpty() ? Tema.aclarar(Tema.VERDE, 0.92f) : Tema.VERDE_CLARO;
-            else if (zona.startsWith("Virtual P")) {
-                int id = Integer.parseInt(zona.substring("Virtual P".length()));
-                fondo = Tema.aclarar(Tema.colorProceso(id), 0.7f);    // parte del proceso en memoria virtual
-            }
             else if ("Virtual".equals(zona)) fondo = Tema.aclarar(Tema.MORADO, 0.92f);
             else if (!valor.isEmpty()) fondo = Tema.aclarar(Tema.MORADO, 0.8f);
-            boolean esPC = r == posicionPCVirtual;
-            Color texto = c == 2 ? Tema.TEXTO_SUAVE : Tema.TEXTO;
-            if (esPC) { fondo = Tema.ROJO_CLARO; texto = Tema.ROJO; }
             l.setBackground(s ? Tema.VERDE_CLARO : fondo);
-            l.setForeground(texto);
-            l.setFont(c == 1 ? Tema.MONO_NORMAL : (esPC ? Tema.PEQUENA_B : Tema.PEQUENA));
+            l.setForeground(c == 2 ? Tema.TEXTO_SUAVE : Tema.TEXTO);
+            l.setFont(c == 1 ? Tema.MONO_NORMAL : Tema.PEQUENA);
             l.setBorder(new EmptyBorder(0, 8, 0, 8));
-            if (c == 0 && esPC) l.setText("▶ " + v);
             return l;
         }
     }
@@ -1476,6 +1626,7 @@ public class VentanaPrincipal extends JFrame {
         // E: estado (String) - estado del proceso
         // S: Color[] - {color del texto/borde, color de fondo} para el distintivo del estado
         // R: ninguna
+        // Correccion - Poll (observación PY1): "Finalizado con error" se pinta en rojo
         public static Color[] coloresEstado(String estado){
             if (estado == null) return new Color[]{GRIS, GRIS_CLARO};
             switch (estado) {
@@ -1486,6 +1637,7 @@ public class VentanaPrincipal extends JFrame {
                 case "Suspendido en espera": return new Color[]{MORADO, MORADO_CLARO};
                 case "Suspendido preparado": return new Color[]{new Color(0x9333EA), new Color(0xF3E8FF)};
                 case "Finalizado":return new Color[]{new Color(0x475569), new Color(0xE2E8F0)};
+                case "Finalizado con error":return new Color[]{ROJO, ROJO_CLARO};
                 default:return new Color[]{GRIS, GRIS_CLARO};
             }
         }
@@ -1814,19 +1966,22 @@ public class VentanaPrincipal extends JFrame {
             repaint();
         }
 
+        // Correccion - Poll (observación PY1): "Finalizado con error" tampoco tiene memoria asignada
         // Procesos que tienen memoria asignada en este momento
         private List<BCP> procesosEnMemoria(){
             List<BCP> lista = new ArrayList<>();
             if (gestor == null) return lista;
             for (BCP b : gestor.getTodosLosProcesos()) {
                 String e = b.getEstado();
-                if (!"Nuevo".equals(e) && !"Finalizado".equals(e) && b.getDireccionBase() >= 0) {
+                if (!"Nuevo".equals(e) && !b.estaFinalizado() && b.getDireccionBase() >= 0) {
                     lista.add(b);
                 }
             }
             return lista;
         }
 
+        // Correccion - Poll: cada bloque se dibuja con el alcance completo; se quitan la etiqueta
+        // "(+N virtual)" y el aviso "PC en memoria virtual" (memoria virtual partida)
         @Override
         protected void paintComponent(Graphics g){
             Graphics2D g2 = (Graphics2D) g.create();
@@ -1874,64 +2029,26 @@ public class VentanaPrincipal extends JFrame {
             dibujarCentrado(g2, "S.O. · " + bcps + " BCP", x, ySO, w, hSO);
             etiquetaDireccion(g2, 0, ySO);
 
-            // Bloques de procesos (ordenados por base; si son muy pequeños se separan
-            // un poco para que las etiquetas no se encimen)
-            BCP enCpu = gestor.getCpu().getBcpActual();
-            List<BCP> bloques = procesosEnMemoria();
-            bloques.sort((a, b) -> Integer.compare(a.getDireccionBase(), b.getDireccionBase()));
-            int finAnterior = ySO + hSO + 2;
-            int ultimaEtiqueta = ySO;
-            int yPCBloque = -1, altoPCBloque = 0;
-            for (BCP b : bloques) {
-                int y = Math.max(arriba + (int) Math.round(b.getDireccionBase() * escala), finAnterior);
-                int alto = Math.max(18, (int) Math.round(b.getEnRAM() * escala));
-                Color c = Tema.colorProceso(b.getIdProceso());
-                g2.setColor(c);
-                g2.fillRoundRect(x, y, w, alto, 10, 10);
-                if (b == enCpu) {
-                    g2.setColor(Tema.TEXTO);
-                    g2.setStroke(new BasicStroke(2f));
-                    g2.drawRoundRect(x + 1, y + 1, w - 3, alto - 3, 10, 10);
-                    g2.setStroke(new BasicStroke(1f));
-                    yPCBloque = y;
-                    altoPCBloque = alto;
-                }
+            for (GestorMemoria.Bloque bloque : gestor.getGestorMemoria().getBloquesFisicos()) {
+                int y = arriba + (int) Math.round(bloque.base() * escala);
+                int alto = Math.max(1, (int) Math.round(bloque.tamanio() * escala));
+                BCP proceso = bloque.proceso();
+                g2.setColor(Tema.colorProceso(proceso.getIdProceso()));
+                g2.fillRect(x, y, w, alto);
                 g2.setColor(Color.WHITE);
                 g2.setFont(Tema.PEQUENA_B);
-                String texto = "P" + b.getIdProceso() + "  Base " + b.getDireccionBase()
-                    + " · Alcance " + b.getTamanioProceso()
-                    + (b.usaMemoriaVirtual() ? " (+" + b.getEnVirtual() + " virtual)" : "");
-                if (g2.getFontMetrics().stringWidth(texto) > w - 8) texto = "P" + b.getIdProceso();
-                dibujarCentrado(g2, texto, x, y, w, alto);
-                if (y - ultimaEtiqueta >= 13) {
-                    etiquetaDireccion(g2, b.getDireccionBase(), y);
-                    ultimaEtiqueta = y;
-                }
-                finAnterior = y + alto + 2;
+                dibujarCentrado(g2, "P" + proceso.getIdProceso() + " · " + bloque.base()
+                    + "–" + (bloque.base() + bloque.tamanio() - 1), x, y, w, alto);
             }
-
-            // Flecha del PC
-            if (enCpu != null && yPCBloque >= 0 && gestor.getCpu().posicionVirtualPC() < 0) {
-                int pc = gestor.getCpu().getPC();
-                double rel = (pc - enCpu.getDireccionBase() + 0.5) / Math.max(1, enCpu.getEnRAM());
-                int yPC = yPCBloque + (int) Math.round(Math.max(0, Math.min(1, rel)) * altoPCBloque);
+            for (CPU cpu : gestor.getCpus()) {
+                BCP proceso = cpu.getBcpActual();
+                if (proceso == null) continue;
+                int pc = gestor.getGestorMemoria().direccionFisica(proceso, cpu.getPC() - proceso.getDireccionBase());
+                if (pc < 0) continue;
+                int yPC = arriba + (int) Math.round((pc + 0.5) * escala);
                 int xf = x + w + 2;
                 g2.setColor(Tema.ROJO);
-                g2.fillPolygon(new int[]{xf, xf + 10, xf + 10}, new int[]{yPC, yPC - 6, yPC + 6}, 3);
-            }
-
-            // Aviso cuando el PC está en la parte del programa que vive en memoria virtual
-            int pcVirtual = gestor.getCpu().posicionVirtualPC();
-            if (pcVirtual >= 0) {
-                String aviso = "PC en memoria virtual · disco [" + pcVirtual + "]";
-                g2.setFont(Tema.PEQUENA_B);
-                FontMetrics fm = g2.getFontMetrics();
-                int aw = fm.stringWidth(aviso) + 16, ah = fm.getHeight() + 6;
-                int ax = x + (w - aw) / 2, ay = arriba + h - ah - 6;
-                g2.setColor(Tema.ROJO_CLARO);
-                g2.fillRoundRect(ax, ay, aw, ah, ah, ah);
-                g2.setColor(Tema.ROJO);
-                g2.drawString(aviso, ax + 8, ay + (ah + fm.getAscent()) / 2 - 2);
+                g2.fillPolygon(new int[]{xf, xf + 10, xf + 10}, new int[]{yPC, yPC - 4, yPC + 4}, 3);
             }
 
             etiquetaDireccion(g2, total - 1, arriba + h - 10);
