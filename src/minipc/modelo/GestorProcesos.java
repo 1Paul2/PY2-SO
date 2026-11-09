@@ -11,8 +11,6 @@ import minipc.hardware.CPU;
 import minipc.hardware.Memoria;
 import minipc.hardware.Disco;
 import minipc.util.ConfiguracionSistema;
-import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -32,15 +30,15 @@ public class GestorProcesos {
     private Disco disco;
     private Planificador planificador;
     private int siguienteIdProceso;
+    private final List<int[]> historial = new ArrayList<>(); 
+    private int[] ociosoPorCpu;
 
     private List<BCP> todosLosProcesos;   // todos los procesos creados, en orden de llegada
     private final List<BCP> pendientesLlegada = new ArrayList<>();
     private int reloj;                    // segundos simulados transcurridos
     private final int[] segundosEnCPU;    // quantum independiente por CPU
-    private LocalTime horaArranque;       // hora real en que arrancó el sistema
 
     public static final int MAX_SEGUNDOS_AUTOMATICO = 100000;
-    private static final DateTimeFormatter FORMATO_HORA = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     // E: tamaños de memoria principal, zona del S.O., disco y memoria virtual
     // S: no aplica (constructor)
@@ -63,6 +61,8 @@ public class GestorProcesos {
         this.gestorMemoria = new minipc.hardware.GestorMemoria(memoria, disco, configuracion);
         this.planificador = new Planificador(memoria, disco, cantidadCpus, gestorMemoria);
         this.segundosEnCPU = new int[cantidadCpus];
+        this.ociosoPorCpu = new int[cantidadCpus];
+
         for (int i = 0; i < cantidadCpus; i++) {
             CPU cpu = new CPU(memoria, pantalla);
             cpu.setDisco(disco);
@@ -73,7 +73,7 @@ public class GestorProcesos {
         this.siguienteIdProceso = 1;
         this.todosLosProcesos = new ArrayList<>();
         this.reloj = 0;
-        this.horaArranque = LocalTime.now();
+   
     }
 
     public GestorProcesos(ConfiguracionSistema c) {
@@ -196,7 +196,16 @@ public class GestorProcesos {
         // Un paso es un segundo GLOBAL: cada CPU ejecuta como máximo una instrucción.
         // No despachar reemplazos hasta que todas hayan completado este intervalo.
         reloj++;
+        int[] segundo = new int[cpus.size()];
+
+        for (int i = 0; i < cpus.size(); i++) {
+            BCP b = cpus.get(i).getBcpActual();
+            if (b == null) ociosoPorCpu[i]++;
+            else segundo[i] = b.getIdProceso();
+        }
+        historial.add(segundo);
         boolean[] errores = new boolean[cpus.size()];
+
         for (int i = 0; i < cpus.size(); i++) {
             CPU cpu = cpus.get(i);
             BCP actual = cpu.getBcpActual();
@@ -353,35 +362,64 @@ public class GestorProcesos {
 
     public int getReloj(){ return reloj; }
 
-    // Correccion - Poll: se quitó getHoraSimulada(); horaDe() queda solo porque la usan las
-    // estadísticas, que por ahora se mantienen como en el proyecto 1
-    // E: segundos (int) - segundos simulados desde el arranque
-    // S: String - hora "HH:mm:ss" correspondiente
-    // R: ninguna
-    public String horaDe(int segundos){
-        return horaArranque.plusSeconds(segundos).format(FORMATO_HORA);
-    }
+    public List<int[]> getHistorial(){ return java.util.Collections.unmodifiableList(historial); }
+    public int getTiempoOcioso(int cpu){ return ociosoPorCpu[cpu]; }
+    public int getTiempoOcioso(){ int t = 0; for (int o : ociosoPorCpu) t += o; return t; }
+    public String getNombreAlgoritmo(){ return planificador.getAlgoritmo().getNombre(); }
+
 
     // E: no aplica
-    // S: List<String[]> - por proceso: id, archivo, inicio, fin, duración (s), tiempo CPU (s), estado
-    // R: los procesos sin terminar muestran "-" en fin y duración
+    // S: List<String[]> - por proceso: id, archivo, llegada, inicio, fin, Ts (ráfaga), Tr (fin − llegada), Tr/Ts, estado
+    // R: los procesos sin terminar muestran "-" en fin, Tr y Tr/Ts
     public List<String[]> getEstadisticas(){
         List<String[]> filas = new ArrayList<>();
         for (BCP b : todosLosProcesos) {
             boolean inicio = b.getTiempoInicio() >= 0;
             boolean fin = b.getTiempoFin() >= 0;
+            int llegada = b.getTiempoLlegada();
+            int ts = b.getRafaga();
+            int tr = b.getTiempoFin() - llegada;
             filas.add(new String[]{
                 "P" + b.getIdProceso(),
                 b.getArchivosAbiertos().isEmpty() ? "-" : b.getArchivosAbiertos().get(0),
-                inicio ? horaDe(b.getTiempoInicio()) : "-",
-                fin ? horaDe(b.getTiempoFin()) : "-",
-                (inicio && fin) ? String.valueOf(b.getTiempoFin() - b.getTiempoInicio()) : "-",
-                String.valueOf(b.getTiempoEmpleado()),
+                String.valueOf(llegada),
+                inicio ? String.valueOf(b.getTiempoInicio()) : "-",
+                fin ? String.valueOf(b.getTiempoFin()) : "-",
+                String.valueOf(ts),
+                fin ? String.valueOf(tr) : "-",
+                fin && ts > 0 ? String.format(java.util.Locale.ROOT, "%.2f", (double) tr / ts) : "-",
                 b.getEstado()
             });
         }
         return filas;
     }
+
+    // E: no aplica
+    // S: String[] - algoritmo, CPU, procesos, inicio, final, ocioso, Tr promedio, Tr/Ts promedio
+    // R: se usa para el acumulado de ejecuciones
+    public String[] getResumen(){
+        int inicio = Integer.MAX_VALUE, n = 0;
+        double sumaTr = 0, sumaRel = 0;
+        for (BCP b : todosLosProcesos) {
+            if (b.getTiempoInicio() >= 0) inicio = Math.min(inicio, b.getTiempoInicio());
+            if (b.getTiempoFin() < 0) continue;
+            int tr = b.getTiempoFin() - b.getTiempoLlegada();
+            sumaTr += tr;
+            sumaRel += (double) tr / Math.max(1, b.getRafaga());
+            n++;
+        }
+        return new String[]{
+            getNombreAlgoritmo(),
+            String.valueOf(cpus.size()),
+            String.valueOf(todosLosProcesos.size()),
+            inicio == Integer.MAX_VALUE ? "-" : String.valueOf(inicio),
+            String.valueOf(reloj),
+            String.valueOf(getTiempoOcioso()),
+            n == 0 ? "-" : String.format(java.util.Locale.ROOT, "%.2f", sumaTr / n),
+            n == 0 ? "-" : String.format(java.util.Locale.ROOT, "%.2f", sumaRel / n)
+        };
+    }
+
 
     // Compatibilidad con clientes de una sola CPU; los índices de getCpu(int) parten de 0.
     public CPU getCpu() { return cpus.get(0); }
