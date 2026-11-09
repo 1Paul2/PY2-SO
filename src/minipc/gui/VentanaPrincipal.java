@@ -60,6 +60,10 @@ public class VentanaPrincipal extends JFrame {
     private final Timer timerAuto;
     private boolean modoAutomatico = false;
 
+    // Resultados acumulados de todas las ejecuciones (no se borran al limpiar)
+    private final List<String[]> ejecucionesAcumuladas = new ArrayList<>();
+    private GestorProcesos gestorRegistrado;   // evita registrar la misma ejecución dos veces
+
     // ---- Encabezado y barra de herramientas ----
     private JLabel lblReloj;
     private Boton btnCargar, btnEjecutar, btnPaso, btnDetener, btnLlegadas, btnLimpiar, btnEstadisticas, btnConfigurar, btnSalir;
@@ -773,6 +777,10 @@ public class VentanaPrincipal extends JFrame {
     }
 
     private void finEjecucion(){
+        if (gestorRegistrado != gestor) {
+            ejecucionesAcumuladas.add(gestor.getResumen());
+            gestorRegistrado = gestor;
+        }
         detenerAutomatico(false);
         gestor.imprimir("[SO] Todos los procesos finalizaron en " + gestor.getReloj() + " s");
         actualizarVista();
@@ -800,7 +808,8 @@ public class VentanaPrincipal extends JFrame {
     // Correccion - Poll: ya no detiene el timer de espera ni limpia el campo del teclado
     // E: no aplica
     // S: no aplica (void)
-    // R: siempre pide confirmación antes de borrar procesos, memoria, disco, pantalla y estadísticas
+    // R: siempre pide confirmación antes de borrar procesos, memoria, disco y pantalla;
+    //    el acumulado de estadísticas se conserva
     private void limpiar(){
         if (gestor == null) {
             JOptionPane.showMessageDialog(this, "No hay nada que limpiar.", "Limpiar", JOptionPane.INFORMATION_MESSAGE);
@@ -810,7 +819,7 @@ public class VentanaPrincipal extends JFrame {
             ? "Hay procesos sin terminar.\n¿Está seguro de que quiere limpiar todo?"
             : "¿Está seguro de que quiere limpiar todo?";
         int r = JOptionPane.showConfirmDialog(this,
-            mensaje + "\nSe borrarán los procesos, la memoria, el disco, la pantalla y las estadísticas.",
+            mensaje + "\nSe borrarán los procesos, la memoria, el disco y la pantalla.\nEl acumulado de estadísticas se conserva.",
             "Confirmar limpieza", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (r != JOptionPane.YES_OPTION) return;
         detenerAutomatico(false);
@@ -1173,9 +1182,13 @@ public class VentanaPrincipal extends JFrame {
     // ESTADÍSTICAS Y CONFIGURACIÓN
  
 
+    // E: no aplica
+    // S: no aplica (void)
+    // R: muestra la ejecución actual por proceso y el acumulado de todas las ejecuciones
     private void mostrarEstadisticas(){
-        if (gestor == null || gestor.getTodosLosProcesos().isEmpty()) {
-            avisar("Todavía no hay procesos.");
+        boolean hayActual = gestor != null && !gestor.getTodosLosProcesos().isEmpty();
+        if (!hayActual && ejecucionesAcumuladas.isEmpty()) {
+            avisar("Todavía no hay procesos ni ejecuciones registradas.");
             return;
         }
         JDialog dlg = new JDialog(this, "Estadísticas de ejecución", true);
@@ -1183,37 +1196,58 @@ public class VentanaPrincipal extends JFrame {
         raiz.setBackground(Tema.FONDO);
         raiz.setBorder(new EmptyBorder(16, 16, 16, 16));
 
-        List<String[]> filas = gestor.getEstadisticas();
-        int terminados = 0, sumaDuracion = 0, sumaCPU = 0;
-        for (String[] f : filas) {
-            if (!"-".equals(f[4])) { terminados++; sumaDuracion += Integer.parseInt(f[4]); }
-            sumaCPU += Integer.parseInt(f[5]);
-        }
-
-        JPanel resumen = new JPanel(new GridLayout(1, 4, 12, 0));
-        resumen.setOpaque(false);
-        resumen.add(tarjetaDato("Procesos", String.valueOf(filas.size()), Tema.VERDE));
-        resumen.add(tarjetaDato("Finalizados", String.valueOf(terminados), Tema.AZUL));
-        resumen.add(tarjetaDato("Tiempo total", gestor.getReloj() + " s", Tema.MORADO));
-        resumen.add(tarjetaDato("Duración promedio",
-            terminados == 0 ? "-" : String.format("%.1f s", (double) sumaDuracion / terminados), Tema.AMBAR));
-        raiz.add(resumen, BorderLayout.NORTH);
-
-        DefaultTableModel modelo = new DefaultTableModel(
-            new String[]{"Proceso", "Programa", "Inicio", "Final", "Duración (s)", "Tiempo CPU (s)", "Estado"}, 0) {
-            @Override public boolean isCellEditable(int r, int c){ return false; }
-        };
-        for (String[] f : filas) modelo.addRow(f);
-        JTable tabla = new JTable(modelo);
-        Componentes.estilizarTabla(tabla);
-        tabla.getColumnModel().getColumn(6).setCellRenderer(new RenderEstado());
         DefaultTableCellRenderer centro = new DefaultTableCellRenderer();
         centro.setHorizontalAlignment(SwingConstants.CENTER);
-        for (int i = 2; i <= 5; i++) tabla.getColumnModel().getColumn(i).setCellRenderer(centro);
+        JTabbedPane pestanas = new JTabbedPane();
 
-        Tarjeta t = new Tarjeta("Duración por proceso  (hora:minuto:segundo simulados)", Tema.VERDE);
-        t.getContenido().add(Componentes.scroll(tabla), BorderLayout.CENTER);
-        raiz.add(t, BorderLayout.CENTER);
+        // ---- Esta ejecución ----
+        if (hayActual) {
+            String[] r = gestor.getResumen();
+            JPanel resumen = new JPanel(new GridLayout(1, 4, 12, 0));
+            resumen.setOpaque(false);
+            resumen.add(tarjetaDato("Algoritmo", r[0], Tema.VERDE));
+            resumen.add(tarjetaDato("Tiempo total", r[4] + " s", Tema.MORADO));
+            resumen.add(tarjetaDato("Tiempo ocioso", r[5] + " s", Tema.AZUL));
+            resumen.add(tarjetaDato("Tr/Ts promedio", r[7], Tema.AMBAR));
+
+            DefaultTableModel modelo = new DefaultTableModel(
+                new String[]{"Proceso", "Programa", "Llegada", "Inicio", "Final", "Ts (ráfaga)", "Tr", "Tr/Ts", "Estado"}, 0) {
+                @Override public boolean isCellEditable(int f, int c){ return false; }
+            };
+            for (String[] f : gestor.getEstadisticas()) modelo.addRow(f);
+            JTable tabla = new JTable(modelo);
+            Componentes.estilizarTabla(tabla);
+            for (int i = 2; i <= 7; i++) tabla.getColumnModel().getColumn(i).setCellRenderer(centro);
+            tabla.getColumnModel().getColumn(8).setCellRenderer(new RenderEstado());
+
+            JPanel actual = new JPanel(new BorderLayout(0, 12));
+            actual.setOpaque(false);
+            actual.setBorder(new EmptyBorder(10, 0, 0, 0));
+            actual.add(resumen, BorderLayout.NORTH);
+            actual.add(Componentes.scroll(tabla), BorderLayout.CENTER);
+            actual.add(etiqueta("Tiempos en segundos desde 0.  Tr = Final − Llegada.  Ts = ráfaga (líneas a procesar)."),
+                BorderLayout.SOUTH);
+            pestanas.addTab("Esta ejecución", actual);
+        }
+
+        // ---- Acumulado de todas las ejecuciones ----
+        DefaultTableModel modeloAcum = new DefaultTableModel(
+            new String[]{"#", "Algoritmo", "CPU", "Procesos", "Inicio", "Final", "Ocioso", "Tr promedio", "Tr/Ts promedio"}, 0) {
+            @Override public boolean isCellEditable(int f, int c){ return false; }
+        };
+        for (int i = 0; i < ejecucionesAcumuladas.size(); i++) {
+            String[] e = ejecucionesAcumuladas.get(i);
+            Object[] fila = new Object[e.length + 1];
+            fila[0] = i + 1;
+            System.arraycopy(e, 0, fila, 1, e.length);
+            modeloAcum.addRow(fila);
+        }
+        JTable tablaAcum = new JTable(modeloAcum);
+        Componentes.estilizarTabla(tablaAcum);
+        for (int i = 0; i < modeloAcum.getColumnCount(); i++) tablaAcum.getColumnModel().getColumn(i).setCellRenderer(centro);
+        pestanas.addTab("Acumulado (" + ejecucionesAcumuladas.size() + ")", Componentes.scroll(tablaAcum));
+
+        raiz.add(pestanas, BorderLayout.CENTER);
 
         Boton cerrar = new Boton("Cerrar", Tema.VERDE);
         cerrar.addActionListener(e -> dlg.dispose());
@@ -1223,7 +1257,7 @@ public class VentanaPrincipal extends JFrame {
         raiz.add(pie, BorderLayout.SOUTH);
 
         dlg.setContentPane(raiz);
-        dlg.setSize(860, 460);
+        dlg.setSize(960, 500);
         dlg.setLocationRelativeTo(this);
         dlg.setVisible(true);
     }
