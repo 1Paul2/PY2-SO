@@ -38,7 +38,7 @@ public final class DialogoConfiguracion {
         boolean[] aplicada = {false};
         JDialog dlg = new JDialog(padre, "Configuración del Mini PC", true);
         Tarjeta t = new Tarjeta("Tamaños (se guardan en " + ConfiguracionSistema.ARCHIVO_POR_DEFECTO + ")", Tema.VERDE);
-        JPanel campos = new JPanel(new GridLayout(9, 2, 10, 10));
+        JPanel campos = new JPanel(new GridLayout(11, 2, 10, 10));
         campos.setOpaque(false);
         JSpinner cantidadCpus = new JSpinner(new SpinnerNumberModel(configuracion.getCantidadCpus(), 1, GestorProcesos.MAX_CPUS, 1));
         campos.add(Componentes.etiqueta("Cantidad de CPU (1 a 5)")); campos.add(cantidadCpus);
@@ -60,6 +60,19 @@ public final class DialogoConfiguracion {
         habilitarMLFQ.run();
         campos.add(Componentes.etiqueta("Niveles MLFQ (2 a 8)")); campos.add(nivelesMLFQ);
         campos.add(Componentes.etiqueta("Promoción global MLFQ (s)")); campos.add(boostMLFQ);
+        JSpinner tasaNuevosSRR = new JSpinner(new SpinnerNumberModel(configuracion.getTasaNuevosSRR(), 1, 100, 1));
+        JSpinner tasaAceptadosSRR = new JSpinner(new SpinnerNumberModel(configuracion.getTasaAceptadosSRR(), 0, 100, 1));
+        tasaNuevosSRR.setToolTipText("Cuánto sube por segundo la prioridad de un proceso nuevo");
+        tasaAceptadosSRR.setToolTipText("Cuánto sube por segundo la prioridad de los aceptados. 0 = como RR; b >= a = como FCFS");
+        Runnable habilitarSRR = () -> {
+            boolean seleccionado = "SRR".equals(algoritmoCpu.getSelectedItem());
+            tasaNuevosSRR.setEnabled(seleccionado);
+            tasaAceptadosSRR.setEnabled(seleccionado);
+        };
+        algoritmoCpu.addActionListener(e -> habilitarSRR.run());
+        habilitarSRR.run();
+        campos.add(Componentes.etiqueta("Tasa nuevos SRR (a)")); campos.add(tasaNuevosSRR);
+        campos.add(Componentes.etiqueta("Tasa aceptados SRR (b)")); campos.add(tasaAceptadosSRR);
         JTextField mp = campo(configuracion.getMemoriaPrincipal());
         JTextField ms = campo(configuracion.getMemoriaSistema());
         JTextField as = campo(configuracion.getAlmacenamientoSecundario());
@@ -123,6 +136,8 @@ public final class DialogoConfiguracion {
                     quantumRR.setValue(configuracion.getQuantumRR());
                     nivelesMLFQ.setValue(configuracion.getNivelesMLFQ());
                     boostMLFQ.setValue(configuracion.getPeriodoBoostMLFQ());
+                    tasaNuevosSRR.setValue(configuracion.getTasaNuevosSRR());
+                    tasaAceptadosSRR.setValue(configuracion.getTasaAceptadosSRR());
                     mp.setText(String.valueOf(configuracion.getMemoriaPrincipal()));
                     ms.setText(String.valueOf(configuracion.getMemoriaSistema()));
                     as.setText(String.valueOf(configuracion.getAlmacenamientoSecundario()));
@@ -145,6 +160,10 @@ public final class DialogoConfiguracion {
                     nivelesMLFQ.commitEdit();
                     boostMLFQ.commitEdit();
                 }
+                if (tasaNuevosSRR.isEnabled()) {
+                    tasaNuevosSRR.commitEdit();
+                    tasaAceptadosSRR.commitEdit();
+                }
                 configuracion.setConfiguracionMemoria(
                     Integer.parseInt(mp.getText().trim()), Integer.parseInt(ms.getText().trim()),
                     Integer.parseInt(as.getText().trim()), Integer.parseInt(mv.getText().trim()),
@@ -155,6 +174,7 @@ public final class DialogoConfiguracion {
                 configuracion.setAlgoritmoCpu((String) algoritmoCpu.getSelectedItem());
                 configuracion.setQuantumRR((Integer) quantumRR.getValue());
                 configuracion.setParametrosMLFQ((Integer) nivelesMLFQ.getValue(), (Integer) boostMLFQ.getValue());
+                configuracion.setParametrosSRR((Integer) tasaNuevosSRR.getValue(), (Integer) tasaAceptadosSRR.getValue());
                 configuracion.guardarEnArchivo(new File(ConfiguracionSistema.ARCHIVO_POR_DEFECTO));
             } catch (NumberFormatException ex) {
                 JOptionPane.showMessageDialog(dlg, "Los cuatro tamaños deben ser números enteros.", "Error", JOptionPane.ERROR_MESSAGE);
