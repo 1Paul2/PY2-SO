@@ -92,7 +92,7 @@ public class PruebaMultiplesCpu {
         exigir(BCP.FINALIZADO_ERROR.equals(error.getEstado()) && sano.getTiempoEmpleado() == 1, "Aislar error");
         g.ejecutarTodo();
         exigir(sano.getAxGuardado() == 5 && sano.getTiempoFin() == 4, "Otra CPU continúa");
-        exigir(g.getPantalla().stream().anyMatch(l -> l.startsWith("P2 >")), "Salida CPU 2 visible");
+        exigir(g.getMonitor().stream().anyMatch(l -> l.startsWith("P2 >")), "Salida CPU 2 visible en el monitor");
 
         g = gestor(5);
         BCP futuro = g.cargarPrograma(programa("INT 20H"), "futuro.asm", 7);

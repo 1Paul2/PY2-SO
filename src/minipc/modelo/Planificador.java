@@ -43,7 +43,7 @@ public class Planificador {
     public static final int MAX_PROCESOS_EN_MEMORIA = 5; // por CPU
     private final int maxProcesosEnMemoria;
 
-    // Avisos del S.O. (p. ej. uso de memoria virtual) que el gestor muestra en pantalla
+    // Avisos del S.O. (p. ej. uso de memoria virtual) que el gestor muestra en la consola
     private final List<String> mensajes = new ArrayList<>();
 
     // E: no aplica

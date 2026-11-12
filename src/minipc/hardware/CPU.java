@@ -21,15 +21,17 @@ public class CPU {
     private Disco disco;          // para leer la parte del programa que está en memoria virtual
     private BCP bcpActual;
     private boolean flagIgual;
-    private final List<String> pantalla;
+    private final List<String> monitor;   // salida de los programas (INT 10H)
+    private final List<String> consola;   // respuestas del S.O. a las llamadas al sistema (INT 21H)
 
     public CPU(Memoria memoria){
-        this(memoria, new ArrayList<>());
+        this(memoria, new ArrayList<>(), new ArrayList<>());
     }
 
-    // Todas las CPU del simulador escriben en la misma pantalla, en orden de tick.
-    public CPU(Memoria memoria, List<String> pantalla){
-        this.pantalla = pantalla;
+    // Todas las CPU del simulador escriben en el mismo monitor y la misma consola, en orden de tick.
+    public CPU(Memoria memoria, List<String> monitor, List<String> consola){
+        this.monitor = monitor;
+        this.consola = consola;
         this.memoria = memoria;
         this.PC = 0;
         this.AC = 0;
@@ -74,14 +76,19 @@ public class CPU {
     public boolean isFlagIgual(){ return flagIgual; }
     public void setFlagIgual(boolean flag){ this.flagIgual = flag; }
 
-    // ===== Pantalla =====
+    // ===== Monitor y consola =====
 
-    // E: texto (String) - línea a mostrar en la pantalla del Mini PC
+    // E: texto (String) - línea que imprime el programa en el monitor (INT 10H)
     // S: no aplica (void)
     // R: ninguna
-    public void imprimir(String texto){ pantalla.add(texto); }
-    public List<String> getPantalla(){ return pantalla; }
-    public void limpiarPantalla(){ pantalla.clear(); }
+    public void imprimir(String texto){ monitor.add(texto); }
+
+    // E: texto (String) - mensaje del S.O. para la consola (resultado de INT 21H)
+    // S: no aplica (void)
+    // R: ninguna
+    public void imprimirConsola(String texto){ consola.add(texto); }
+    public List<String> getMonitor(){ return monitor; }
+    public List<String> getConsola(){ return consola; }
 
     // E: no aplica
     // S: int - primera posición fuera del programa actual (base + alcance)
@@ -314,43 +321,43 @@ public class CPU {
         String p = "P" + bcpActual.getIdProceso() + " > ";
         String nombre = DXTexto;
         if (nombre == null || nombre.isEmpty()) {
-            imprimir(p + "INT 21H: DX no tiene un nombre de archivo (use MOV DX, \"archivo.txt\")");
+            imprimirConsola(p + "INT 21H: DX no tiene un nombre de archivo (use MOV DX, \"archivo.txt\")");
             return;
         }
         boolean esPrograma = nombre.toLowerCase().endsWith(".asm");
         switch (AH) {
             case 0x3C: {   // crear
-                if (esPrograma) { imprimir(p + "INT 21H: no se permite crear archivos .asm"); return; }
+                if (esPrograma) { imprimirConsola(p + "INT 21H: no se permite crear archivos .asm"); return; }
                 if (disco.existeArchivo(nombre)) {
-                    imprimir(p + "INT 21H: el archivo " + nombre + " ya existe");
+                    imprimirConsola(p + "INT 21H: el archivo " + nombre + " ya existe");
                 } else if (!disco.guardarArchivo(nombre, new ArrayList<>())) {
-                    imprimir(p + "INT 21H: no hay espacio en el índice del disco para " + nombre);
+                    imprimirConsola(p + "INT 21H: no hay espacio en el índice del disco para " + nombre);
                     return;
                 } else {
-                    imprimir(p + "archivo " + nombre + " creado");
+                    imprimirConsola(p + "archivo " + nombre + " creado");
                 }
                 bcpActual.abrirArchivo(nombre);
                 break;
             }
             case 0x3D: {   // abrir
                 if (!disco.existeArchivo(nombre)) {
-                    imprimir(p + "INT 21H: el archivo " + nombre + " no existe");
+                    imprimirConsola(p + "INT 21H: el archivo " + nombre + " no existe");
                     return;
                 }
                 bcpActual.abrirArchivo(nombre);
-                imprimir(p + "archivo " + nombre + " abierto");
+                imprimirConsola(p + "archivo " + nombre + " abierto");
                 break;
             }
             case 0x4D: {   // leer
                 if (!bcpActual.tieneAbierto(nombre)) {
-                    imprimir(p + "INT 21H: el archivo " + nombre + " no está abierto");
+                    imprimirConsola(p + "INT 21H: el archivo " + nombre + " no está abierto");
                     return;
                 }
                 List<String> lineas = disco.leerArchivo(nombre);
                 int pos = bcpActual.getPunteroLectura(nombre);
                 if (pos >= lineas.size()) {
                     AL = 0;
-                    imprimir(p + "fin del archivo " + nombre + " (AL = 0)");
+                    imprimirConsola(p + "fin del archivo " + nombre + " (AL = 0)");
                     return;
                 }
                 try {
@@ -359,36 +366,36 @@ public class CPU {
                     AL = 0;
                 }
                 bcpActual.setPunteroLectura(nombre, pos + 1);
-                imprimir(p + "leído de " + nombre + ": AL = " + AL);
+                imprimirConsola(p + "leído de " + nombre + ": AL = " + AL);
                 break;
             }
             case 0x40: {   // escribir
-                if (esPrograma) { imprimir(p + "INT 21H: protección, no se puede escribir en un programa .asm"); return; }
+                if (esPrograma) { imprimirConsola(p + "INT 21H: protección, no se puede escribir en un programa .asm"); return; }
                 if (!bcpActual.tieneAbierto(nombre)) {
-                    imprimir(p + "INT 21H: el archivo " + nombre + " no está abierto");
+                    imprimirConsola(p + "INT 21H: el archivo " + nombre + " no está abierto");
                     return;
                 }
                 List<String> lineas = new ArrayList<>(disco.leerArchivo(nombre));
                 lineas.add(String.valueOf(AL));
                 if (disco.reescribirArchivo(nombre, lineas)) {
-                    imprimir(p + "escrito en " + nombre + ": " + AL);
+                    imprimirConsola(p + "escrito en " + nombre + ": " + AL);
                 } else {
-                    imprimir(p + "INT 21H: no hay espacio en disco para escribir en " + nombre);
+                    imprimirConsola(p + "INT 21H: no hay espacio en disco para escribir en " + nombre);
                 }
                 break;
             }
             case 0x41: {   // eliminar
-                if (esPrograma) { imprimir(p + "INT 21H: protección, no se puede eliminar un programa .asm"); return; }
+                if (esPrograma) { imprimirConsola(p + "INT 21H: protección, no se puede eliminar un programa .asm"); return; }
                 if (!disco.eliminarArchivo(nombre)) {
-                    imprimir(p + "INT 21H: el archivo " + nombre + " no existe");
+                    imprimirConsola(p + "INT 21H: el archivo " + nombre + " no existe");
                     return;
                 }
                 bcpActual.cerrarArchivo(nombre);
-                imprimir(p + "archivo " + nombre + " eliminado");
+                imprimirConsola(p + "archivo " + nombre + " eliminado");
                 break;
             }
             default:
-                imprimir(p + "INT 21H: AH = " + String.format("%02XH", AH)
+                imprimirConsola(p + "INT 21H: AH = " + String.format("%02XH", AH)
                     + " no es una función válida (3CH, 3DH, 4DH, 40H, 41H)");
         }
     }
@@ -398,7 +405,7 @@ public class CPU {
         if(codigo == null) return;
         switch (codigo) {
             case "20H": PC = getLimite(); break;
-            case "10H": imprimir("P" + bcpActual.getIdProceso() + " > " + (DXTexto != null ? DXTexto : String.valueOf(DX))); break;   // pantalla
+            case "10H": imprimir("P" + bcpActual.getIdProceso() + " > " + (DXTexto != null ? DXTexto : String.valueOf(DX))); break;   // monitor
             case "21H": ejecutarINT21(); break;                                          // archivos
             default: throw new RuntimeException("Interrupción inválida: " + codigo);
         }

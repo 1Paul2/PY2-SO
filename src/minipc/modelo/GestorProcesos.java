@@ -24,7 +24,8 @@ public class GestorProcesos {
     public static final int MAX_CPUS = 5;
     private final List<CPU> cpus = new ArrayList<>();
     private final List<Despachador> despachadores = new ArrayList<>();
-    private final List<String> pantalla = new ArrayList<>();
+    private final List<String> monitor = new ArrayList<>();   // salida de los programas (INT 10H)
+    private final List<String> consola = new ArrayList<>();   // mensajes del S.O.
     private Memoria memoria;
     private minipc.hardware.GestorMemoria gestorMemoria;
     private Disco disco;
@@ -64,7 +65,7 @@ public class GestorProcesos {
         this.ociosoPorCpu = new int[cantidadCpus];
 
         for (int i = 0; i < cantidadCpus; i++) {
-            CPU cpu = new CPU(memoria, pantalla);
+            CPU cpu = new CPU(memoria, monitor, consola);
             cpu.setDisco(disco);
             cpu.setGestorMemoria(gestorMemoria);
             cpus.add(cpu);
@@ -427,8 +428,11 @@ public class GestorProcesos {
     public List<CPU> getCpus() { return java.util.Collections.unmodifiableList(cpus); }
     public int getCantidadCpus() { return cpus.size(); }
     public int getCpusOcupadas() { return enEjecucion(); }
-    public void imprimir(String texto) { pantalla.add(texto); }
-    public List<String> getPantalla() { return java.util.Collections.unmodifiableList(pantalla); }
+    // Los mensajes del S.O. (despachador, memoria, errores) van a la consola; el monitor
+    // solo recibe lo que imprimen los programas con INT 10H
+    public void imprimir(String texto) { consola.add(texto); }
+    public List<String> getMonitor() { return java.util.Collections.unmodifiableList(monitor); }
+    public List<String> getConsola() { return java.util.Collections.unmodifiableList(consola); }
     public Memoria getMemoria() { return memoria; }
     public minipc.hardware.GestorMemoria getGestorMemoria(){ return gestorMemoria; }
     public Disco getDisco() { return disco; }

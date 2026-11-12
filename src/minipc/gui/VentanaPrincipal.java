@@ -115,7 +115,8 @@ public class VentanaPrincipal extends JFrame {
     private JTable tablaDisco;
 
     // ---- Pantalla ----
-    private JTextPane areaPantalla;
+    private JTextPane areaMonitor;    // salida de los programas (INT 10H)
+    private JTextPane areaConsola;    // mensajes del S.O.
 
     // Correccion - Poll: se quita el timer que contaba los segundos de espera del teclado, y el
     // shutdown hook que devolvía config.txt a los valores por defecto al cerrar
@@ -353,7 +354,7 @@ public class VentanaPrincipal extends JFrame {
         dispPantalla = new Distintivo();
         dispDisco = new Distintivo();
         filas.add(filaDispositivo("CPU ocupadas", dispCPU));
-        filas.add(filaDispositivo("Pantalla", dispPantalla));
+        filas.add(filaDispositivo("Monitor", dispPantalla));
         filas.add(filaDispositivo("Disco", dispDisco));
         modeloCpus = new DefaultTableModel(new String[]{"CPU", "Proceso", "Estado", "PC"}, 0) {
             @Override public boolean isCellEditable(int r, int c){ return false; }
@@ -450,14 +451,26 @@ public class VentanaPrincipal extends JFrame {
         vistasMemoria.addTab("Tabla de ejecución", crearTablaEjecucion());
         tarjetaMemoria.getContenido().add(vistasMemoria, BorderLayout.CENTER);
 
-        // Pantalla
-        Tarjeta pantalla = new Tarjeta("Pantalla", new Color(0x0F766E));
-        areaPantalla = new JTextPane();
-        areaPantalla.setEditable(false);
-        areaPantalla.setFont(Tema.MONO_NORMAL);
-        areaPantalla.setBackground(new Color(0xFBFDFB));
-        areaPantalla.setBorder(new EmptyBorder(8, 10, 8, 10));
-        pantalla.getContenido().add(Componentes.scroll(areaPantalla), BorderLayout.CENTER);
+        // Monitor (salida de los programas) y consola (mensajes del S.O.), en pestañas
+        Tarjeta pantalla = new Tarjeta("Monitor y consola", new Color(0x0F766E));
+        areaMonitor = new JTextPane();
+        areaMonitor.setEditable(false);
+        areaMonitor.setFont(Tema.MONO_NORMAL);
+        areaMonitor.setBackground(new Color(0x0F1A14));
+        areaMonitor.setBorder(new EmptyBorder(8, 10, 8, 10));
+        JScrollPane scrollMonitor = Componentes.scroll(areaMonitor);
+        scrollMonitor.getViewport().setBackground(new Color(0x0F1A14));
+        areaConsola = new JTextPane();
+        areaConsola.setEditable(false);
+        areaConsola.setFont(Tema.MONO_NORMAL);
+        areaConsola.setBackground(new Color(0xFBFDFB));
+        areaConsola.setBorder(new EmptyBorder(8, 10, 8, 10));
+        JTabbedPane vistasPantalla = new JTabbedPane();
+        vistasPantalla.addTab("Monitor", scrollMonitor);
+        vistasPantalla.addTab("Consola del S.O.", Componentes.scroll(areaConsola));
+        vistasPantalla.setToolTipTextAt(0, "Lo que imprimen los programas con INT 10H");
+        vistasPantalla.setToolTipTextAt(1, "Lo que hace el sistema operativo: despachador, memoria, archivos y errores");
+        pantalla.getContenido().add(vistasPantalla, BorderLayout.CENTER);
 
         // Disco
         tarjetaDisco = new Tarjeta("Disco", Tema.MORADO);
@@ -1081,7 +1094,7 @@ public class VentanaPrincipal extends JFrame {
             barraDisco.setValor(0, configuracion.getAlmacenamientoSecundario());
             barraVirtual.setValor(0, configuracion.getMemoriaVirtual());
             dispCPU.setColores("Libre", Tema.GRIS, Tema.GRIS_CLARO);
-            dispPantalla.setColores("Lista", Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
+            dispPantalla.setColores("Listo", Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
             dispDisco.setColores("Sin archivos", Tema.GRIS, Tema.GRIS_CLARO);
             return;
         }
@@ -1116,7 +1129,7 @@ public class VentanaPrincipal extends JFrame {
             ocupadas > 0 ? Tema.VERDE_OSCURO : Tema.GRIS,
             ocupadas > 0 ? Tema.VERDE_CLARO : Tema.GRIS_CLARO);
 
-        dispPantalla.setColores(gestor.getPantalla().isEmpty() ? "Lista" : "Mostrando salida",
+        dispPantalla.setColores(gestor.getMonitor().isEmpty() ? "Listo" : "Mostrando salida",
             Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
 
         dispDisco.setColores(archivos + " archivo(s)", Tema.MORADO, Tema.MORADO_CLARO);
@@ -1284,36 +1297,52 @@ public class VentanaPrincipal extends JFrame {
     }
 
     // Correccion - Poll: se quita la habilitación del campo de teclado según el proceso en espera
+    // E: no aplica
+    // S: no aplica (void)
+    // R: el monitor muestra solo la salida de los programas (INT 10H), con el "P#" del color del
+    //    proceso; la consola muestra los mensajes del S.O. (errores en rojo, [SO] en gris)
     private void actualizarPantalla(){
-        StyledDocument doc = areaPantalla.getStyledDocument();
-        areaPantalla.setText("");
-
+        StyledDocument mon = areaMonitor.getStyledDocument();
+        areaMonitor.setText("");
         if (gestor != null) {
-            for (String linea : gestor.getPantalla()) {
-                SimpleAttributeSet a = new SimpleAttributeSet();
-                StyleConstants.setFontFamily(a, Tema.MONO_NORMAL.getFamily());
-                StyleConstants.setFontSize(a, 13);
-                if (linea.startsWith("ERROR")) {
-                    StyleConstants.setForeground(a, Tema.ROJO);
-                    StyleConstants.setBold(a, true);
-                } else if (linea.startsWith(">>")) {
-                    StyleConstants.setForeground(a, Tema.AMBAR);
-                    StyleConstants.setBold(a, true);
-                } else if (linea.startsWith("[SO]")) {
-                    StyleConstants.setForeground(a, Tema.TEXTO_SUAVE);
-                    StyleConstants.setItalic(a, true);
-                } else if (linea.startsWith("P")) {
-                    StyleConstants.setForeground(a, Tema.VERDE_OSCURO);
-                    StyleConstants.setBold(a, true);
-                } else {
-                    StyleConstants.setForeground(a, Tema.AZUL);
-                }
-                try {
-                    doc.insertString(doc.getLength(), linea + "\n", a);
-                } catch (javax.swing.text.BadLocationException ignorada) { }
+            for (String linea : gestor.getMonitor()) {
+                int corte = linea.indexOf(" > ");
+                String quien = corte > 0 ? linea.substring(0, corte) : "";
+                String texto = corte > 0 ? linea.substring(corte + 3) : linea;
+                Color colorQuien = Tema.VERDE_CLARO;
+                try { colorQuien = Tema.aclarar(Tema.colorProceso(Integer.parseInt(quien.substring(1))), 0.35f); }
+                catch (RuntimeException sinId) { }
+                agregar(mon, quien.isEmpty() ? "" : quien + "  ", colorQuien, true, false);
+                agregar(mon, texto + "\n", new Color(0xE8F5EC), false, false);
             }
         }
-        areaPantalla.setCaretPosition(doc.getLength());
+        if (mon.getLength() == 0) agregar(mon, "(todavía ningún programa imprimió con INT 10H)", new Color(0x6B8A77), false, true);
+        areaMonitor.setCaretPosition(mon.getLength());
+
+        StyledDocument doc = areaConsola.getStyledDocument();
+        areaConsola.setText("");
+        if (gestor != null) {
+            for (String linea : gestor.getConsola()) {
+                if (linea.startsWith("ERROR")) agregar(doc, linea + "\n", Tema.ROJO, true, false);
+                else if (linea.startsWith(">>")) agregar(doc, linea + "\n", Tema.AMBAR, true, false);
+                else if (linea.startsWith("[SO]")) agregar(doc, linea + "\n", Tema.TEXTO_SUAVE, false, true);
+                else if (linea.startsWith("P")) agregar(doc, linea + "\n", Tema.VERDE_OSCURO, true, false);
+                else agregar(doc, linea + "\n", Tema.AZUL, false, false);
+            }
+        }
+        areaConsola.setCaretPosition(doc.getLength());
+    }
+
+    private void agregar(StyledDocument doc, String texto, Color color, boolean negrita, boolean cursiva){
+        SimpleAttributeSet a = new SimpleAttributeSet();
+        StyleConstants.setFontFamily(a, Tema.MONO_NORMAL.getFamily());
+        StyleConstants.setFontSize(a, 13);
+        StyleConstants.setForeground(a, color);
+        StyleConstants.setBold(a, negrita);
+        StyleConstants.setItalic(a, cursiva);
+        try {
+            doc.insertString(doc.getLength(), texto, a);
+        } catch (javax.swing.text.BadLocationException ignorada) { }
     }
 
     private void actualizarBotones(){
