@@ -11,6 +11,7 @@ package minipc.util;
  *
  */
 
+import minipc.modelo.algoritmos.SelfishRoundRobin;
 import minipc.modelo.BCP;
 import java.io.File;
 import java.io.FileReader;
@@ -56,6 +57,8 @@ public class ConfiguracionSistema {
     private String particiones = "16,32,64";
     private int nivelesMLFQ = 3;
     private int periodoBoostMLFQ = 20;
+    private int tasaNuevosSRR = SelfishRoundRobin.TASA_NUEVOS_DEF;          // a
+    private int tasaAceptadosSRR = SelfishRoundRobin.TASA_ACEPTADOS_DEF;    // b
 
     // E: no aplica
     // S: no aplica (constructor)
@@ -96,6 +99,9 @@ public class ConfiguracionSistema {
         int niveles = leerEntero(p, "nivelesMLFQ", 3);
         int boost = leerEntero(p, "periodoBoostMLFQ", 20);
         validarMLFQ(niveles, boost);
+        int tasaA = leerEntero(p, "tasaNuevosSRR", SelfishRoundRobin.TASA_NUEVOS_DEF);
+        int tasaB = leerEntero(p, "tasaAceptadosSRR", SelfishRoundRobin.TASA_ACEPTADOS_DEF);
+        SelfishRoundRobin.validarTasas(tasaA, tasaB);
         validarCantidadCpus(cpus);
         minipc.hardware.EstrategiaMemoria estrategia = minipc.hardware.EstrategiaMemoria.valueOf(
             p.getProperty("estrategiaMemoria", "FIRST_FIT").trim());
@@ -107,6 +113,8 @@ public class ConfiguracionSistema {
         quantumRR = quantum;
         nivelesMLFQ = niveles;
         periodoBoostMLFQ = boost;
+        tasaNuevosSRR = tasaA;
+        tasaAceptadosSRR = tasaB;
         algoritmoCpu = algoritmo;
     }
 
@@ -128,6 +136,8 @@ public class ConfiguracionSistema {
         p.setProperty("particiones", particiones);
         p.setProperty("nivelesMLFQ", String.valueOf(nivelesMLFQ));
         p.setProperty("periodoBoostMLFQ", String.valueOf(periodoBoostMLFQ));
+        p.setProperty("tasaNuevosSRR", String.valueOf(tasaNuevosSRR));
+        p.setProperty("tasaAceptadosSRR", String.valueOf(tasaAceptadosSRR));
         try (FileWriter escritor = new FileWriter(archivo)) {
             p.store(escritor, "Configuracion del Mini PC");
         }
@@ -201,6 +211,18 @@ public class ConfiguracionSistema {
         validarMLFQ(niveles, boost);
         nivelesMLFQ = niveles;
         periodoBoostMLFQ = boost;
+    }
+
+    public int getTasaNuevosSRR(){ return tasaNuevosSRR; }
+    public int getTasaAceptadosSRR(){ return tasaAceptadosSRR; }
+
+    // E: tasaNuevos (int) - a; tasaAceptados (int) - b
+    // S: no aplica (void)
+    // R: a >= 1 y b >= 0
+    public void setParametrosSRR(int tasaNuevos, int tasaAceptados){
+        SelfishRoundRobin.validarTasas(tasaNuevos, tasaAceptados);
+        tasaNuevosSRR = tasaNuevos;
+        tasaAceptadosSRR = tasaAceptados;
     }
 
     public int getCantidadCpus(){ return cantidadCpus; }

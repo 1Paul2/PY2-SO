@@ -6,22 +6,51 @@ import java.util.Set;
 import minipc.modelo.BCP;
 import minipc.modelo.ColaTrabajo;
 
+/**
+ * Selfish Round Robin: los procesos aceptados se turnan la CPU con Round Robin. Los nuevos
+ * esperan afuera; su prioridad sube a ritmo "a" y la de los aceptados a ritmo "b". Un nuevo
+ * entra a la rotación cuando su prioridad alcanza la de los aceptados.
+ * Con b = 0 se comporta como RR; con b >= a, como FCFS.
+ */
 public class SelfishRoundRobin implements AlgoritmoPlanificacion {
+    public static final int TASA_NUEVOS_DEF = 2;
+    public static final int TASA_ACEPTADOS_DEF = 1;
+
     private final int quantum;
+    private final int tasaNuevos;      // a: cuánto sube por segundo la prioridad de un proceso nuevo
+    private final int tasaAceptados;   // b: cuánto sube por segundo la prioridad de los aceptados
     private final Set<BCP> admitidos = new HashSet<>();
     private long prioridadGrupo;
     private int ultimoReloj;
 
     public SelfishRoundRobin(int quantum){
+        this(quantum, TASA_NUEVOS_DEF, TASA_ACEPTADOS_DEF);
+    }
+
+    // E: quantum (int) - segundos por turno; tasaNuevos (int) - a; tasaAceptados (int) - b
+    // S: no aplica (constructor)
+    // R: quantum >= 1, a >= 1 y b >= 0
+    public SelfishRoundRobin(int quantum, int tasaNuevos, int tasaAceptados){
         if (quantum < 1) throw new IllegalArgumentException("El quantum debe ser positivo");
+        validarTasas(tasaNuevos, tasaAceptados);
         this.quantum = quantum;
+        this.tasaNuevos = tasaNuevos;
+        this.tasaAceptados = tasaAceptados;
+    }
+
+    // E: tasaNuevos (int) - a; tasaAceptados (int) - b
+    // S: no aplica (void)
+    // R: lanza IllegalArgumentException si a < 1 o b < 0
+    public static void validarTasas(int tasaNuevos, int tasaAceptados){
+        if (tasaNuevos < 1 || tasaAceptados < 0)
+            throw new IllegalArgumentException("Selfish RR requiere tasa de nuevos (a) >= 1 y tasa de aceptados (b) >= 0");
     }
 
     @Override
     public String getNombre(){ return "SRR"; }
 
     private long prioridadNuevo(BCP proceso, int reloj){
-        return 2L * (reloj - proceso.getTiempoLlegada());
+        return (long) tasaNuevos * (reloj - proceso.getTiempoLlegada());
     }
 
     @Override
@@ -33,7 +62,7 @@ public class SelfishRoundRobin implements AlgoritmoPlanificacion {
         if (admitidos.isEmpty()) {
             prioridadGrupo = cola.stream().mapToLong(p -> prioridadNuevo(p, reloj)).max().orElse(0);
         } else {
-            prioridadGrupo += reloj - ultimoReloj;
+            prioridadGrupo += (long) tasaAceptados * (reloj - ultimoReloj);
         }
         ultimoReloj = reloj;
 
