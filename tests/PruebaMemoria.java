@@ -11,7 +11,7 @@ public class PruebaMemoria {
     static ConfiguracionSistema configuracion(EstrategiaMemoria estrategia, int cpus){
         ConfiguracionSistema c = new ConfiguracionSistema();
         c.setCantidadCpus(cpus);
-        c.setQuantumRR(1);
+        for (String a : new String[]{"RR", "SRR", "Lottery", "MLFQ"}) c.setQuantum(a, 1);
         c.setConfiguracionMemoria(256, 80, 2048, 128, estrategia, 4, 16, "12,16,24,32");
         return c;
     }
