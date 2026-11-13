@@ -420,6 +420,11 @@ public class GestorProcesos {
     // Compatibilidad con clientes de una sola CPU; los índices de getCpu(int) parten de 0.
     public CPU getCpu() { return cpus.get(0); }
     public CPU getCpu(int indice) { return cpus.get(indice); }
+
+    // E: indice (int) - CPU (0 = CPU 1)
+    // S: int - segundos seguidos que lleva el proceso actual en esa CPU desde que entró
+    // R: ninguna
+    public int getSegundosEnCpu(int indice) { return segundosEnCPU[indice]; }
     public List<CPU> getCpus() { return java.util.Collections.unmodifiableList(cpus); }
     public int getCantidadCpus() { return cpus.size(); }
     public int getCpusOcupadas() { return enEjecucion(); }
