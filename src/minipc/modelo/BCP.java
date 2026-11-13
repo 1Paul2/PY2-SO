@@ -21,11 +21,9 @@ import java.util.ArrayList;
  * de la CPU capturados al momento de invocar capturaEstado().
  */
 public class BCP {
-    // Modelo de 7 estados (Stallings, cap. 3): Nuevo, Preparado, Ejecución, En espera,
-    // Suspendido en espera (bloqueado y fuera de memoria), Suspendido preparado
-    // (ya ocurrió su evento pero sigue fuera de memoria) y Finalizado.
-    public static final String SUSPENDIDO_ESPERA = "Suspendido en espera";
-    public static final String SUSPENDIDO_PREPARADO = "Suspendido preparado";
+    // Modelo de 5 estados (Stallings, cap. 3): Nuevo, Preparado, Ejecución, En espera y Finalizado.
+    // En este simulador ningún proceso se bloquea (no hay entrada de teclado y las interrupciones
+    // duran 1 s), así que "En espera" queda como parte del modelo pero no se usa.
     // Correccion - Poll (observación PY1): un proceso que termina por un error (pila, salto,
     // acceso a memoria) se distingue del que terminó bien con INT 20H o al llegar al final
     public static final String FINALIZADO = "Finalizado";
@@ -67,11 +65,8 @@ public class BCP {
     private int ahGuardado;           // registro AH (función de INT 21H)
     private int alGuardado;            // registro AL (dato que se lee/escribe con INT 21H)
     private String dxTextoGuardado;    // nombre de archivo guardado en DX (MOV DX, "archivo.txt")
-    private int desplazamientoPC;      // posición del PC dentro del programa al suspenderse (-1 si no)
     private java.util.Map<String, Integer> punterosLectura;   // próxima línea a leer de cada archivo abierto
             
-        // Correccion - Poll: se quitan enRAM, baseVirtual y avisoVirtual (memoria virtual
-        // "mitad en RAM, mitad en disco"; se rehace con paginación)
         // E: idProceso (int) - identificador del proceso; estado (String)
         // S: no aplica (constructor)
         // R: ninguna
@@ -94,7 +89,6 @@ public class BCP {
             this.ahGuardado = 0;
             this.alGuardado = 0;
             this.dxTextoGuardado = null;
-            this.desplazamientoPC = -1;
             this.punterosLectura = new java.util.HashMap<>();
             this.tiempoEmpleado = 0;
             this.cpuId = -1;
@@ -334,7 +328,6 @@ public class BCP {
             return sb.append("]").toString();
         }
 
-        // Correccion - Poll: se quitan los campos RAM y Virtual (memoria virtual partida)
         // Correccion - Poll (observación PY1): reemplaza a aTextoMemoria(), que juntaba todo el BCP en
         // un solo texto para una sola posición. Ahora cada elemento del BCP tiene su propia posición
         // en la zona del S.O., en el orden de CAMPOS_MEMORIA
@@ -380,12 +373,6 @@ public class BCP {
         }
         public void setDxTextoGuardado(String t){
             this.dxTextoGuardado = t; 
-        }
-        public int getDesplazamientoPC(){
-            return desplazamientoPC; 
-        }
-        public void setDesplazamientoPC(int d){ 
-            this.desplazamientoPC = d; 
         }
 
         // E: archivo (String) - nombre del archivo

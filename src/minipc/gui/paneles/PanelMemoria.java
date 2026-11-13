@@ -36,7 +36,6 @@ public class PanelMemoria extends JSplitPane {
     // E: no aplica
     // S: no aplica (constructor)
     // R: ninguna
-    // Correccion - Poll: se quita la leyenda "(+N virtual)" de la memoria virtual partida
     public PanelMemoria(){
         super(JSplitPane.HORIZONTAL_SPLIT);
         mapaMemoria = new MapaMemoria();
@@ -83,8 +82,6 @@ public class PanelMemoria extends JSplitPane {
     // E: gestor (GestorProcesos) - puede ser null; cpuElegida (CPU) - la CPU cuyo PC se resalta
     // S: no aplica (void)
     // R: ninguna
-    // Correccion - Poll: el dueño de cada posición usa el alcance completo y el PC siempre está
-    // en RAM (ya no hay parte del programa en memoria virtual)
     // Correccion - Poll (observación PY1): las 16 posiciones del bloque de cada BCP se marcan como
     // suyas ("BCP P1"); el valor de cada posición ya dice qué campo es ("PC=82")
     public void actualizar(GestorProcesos gestor, CPU cpuElegida){

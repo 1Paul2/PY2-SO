@@ -77,8 +77,6 @@ public class ConfiguracionSistema {
         }
     }
 
-    // Correccion - Poll: lee también la zona del S.O. y la memoria virtual del archivo, en vez de
-    // calcularlas con porcentajes fijos
     // E: archivo (File) - archivo de configuración clave=valor
     // S: no aplica (void)
     // R: lanza IllegalArgumentException si un valor no es válido
@@ -143,8 +141,6 @@ public class ConfiguracionSistema {
         }
     }
 
-    // Correccion - Poll: como la memoria virtual ya no se calcula, se valida que deje espacio en el
-    // disco para el índice y los archivos
     // Correccion - Poll (observación PY1): la zona del S.O. debe alcanzar al menos para un bloque de BCP
     // (16 posiciones); con menos de 80 caben menos de 5 procesos a la vez
     // E: los cuatro tamaños
@@ -294,8 +290,6 @@ public class ConfiguracionSistema {
         return memoriaVirtual;
     }
 
-    // Correccion - Poll: recibe los cuatro tamaños; la zona del S.O. y la memoria virtual ya no
-    // se calculan con porcentajes fijos (25 % y 12,5 %)
     // E: mp (int) - memoria principal; ms (int) - zona del S.O.; as (int) - disco; mv (int) - memoria virtual
     // S: no aplica (void)
     // R: valida todo antes de asignar

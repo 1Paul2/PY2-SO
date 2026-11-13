@@ -185,8 +185,7 @@ public class GestorProcesos {
     // E: no aplica
     // S: boolean - true si se ejecutó un segundo de CPU; false si no había nada que ejecutar
     // R: 1 llamada = 1 segundo global; hasta una instrucción por CPU
-    // Correccion - Poll: se quita el bloqueo por teclado (INT 09H); la CPU solo queda
-    // ociosa si no hay procesos preparados
+    // La CPU solo queda ociosa si no hay procesos preparados
     // Correccion - Poll (observación PY1): un error deja el proceso "Finalizado con error", y después
     // de cada segundo se le pregunta al algoritmo de planificación si debe expropiar al proceso
     // (FCFS nunca lo hace; RR, SRT y los demás lo usarán)
@@ -238,7 +237,6 @@ public class GestorProcesos {
         return true;
     }
 
-    // Correccion - Poll: ya no se detiene esperando el teclado (INT 09H se quitó)
     // E: no aplica
     // S: no aplica (void)
     // R: se detiene cuando no queda nada que ejecutar, o tras MAX_SEGUNDOS_AUTOMATICO
@@ -323,9 +321,6 @@ public class GestorProcesos {
         for (BCP b = planificador.getListaProcesos().getPrimero(); b != null; b = b.getSiguiente()) {
             escribirBCP(b);
         }
-        for (BCP b = planificador.getListaEspera().getPrimero(); b != null; b = b.getSiguiente()) {
-            escribirBCP(b);
-        }
     }
 
     // Correccion - Poll (observación PY1): antes el BCP entero se escribía como un solo texto en una
@@ -343,8 +338,7 @@ public class GestorProcesos {
     public boolean hayProcesos(){
         return !pendientesLlegada.isEmpty() || enEjecucion() > 0
             || !planificador.getListaTrabajos().estaVacia()
-            || !planificador.getListaProcesos().estaVacia()
-            || !planificador.getListaEspera().estaVacia();
+            || !planificador.getListaProcesos().estaVacia();
     }
 
     // E: no aplica

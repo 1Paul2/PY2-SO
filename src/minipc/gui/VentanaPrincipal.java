@@ -70,8 +70,6 @@ public class VentanaPrincipal extends JFrame {
     private PanelDisco panelDisco;
     private PanelCpu panelCpu;
 
-    // Correccion - Poll: se quita el timer que contaba los segundos de espera del teclado, y el
-    // shutdown hook que devolvía config.txt a los valores por defecto al cerrar
     // E: no aplica
     // S: no aplica constructor
     // R: arma la ventana completa con la configuración de config.txt
@@ -98,7 +96,6 @@ public class VentanaPrincipal extends JFrame {
     //ENCABEZADO
 
 
-    // Correccion - Poll: se quita el chip de hora real; el tiempo se muestra solo en segundos desde 0
     private JPanel crearEncabezado(){
         JPanel panel = new JPanel(new BorderLayout(0, 12));
         panel.setOpaque(false);
@@ -336,7 +333,6 @@ public class VentanaPrincipal extends JFrame {
         actualizarVista();
     }
 
-    // Correccion - Poll: ya no se bloquea ni arranca el conteo de espera del teclado
     // Botón "Siguiente": 1 segundo de CPU
     private void pasoManual(){
         if (!validarHayProcesos()) return;
@@ -347,7 +343,6 @@ public class VentanaPrincipal extends JFrame {
         }
     }
 
-    // Correccion - Poll: se quita el aviso de "un proceso espera un valor de teclado"
     // Botón "Ejecutar": modo automático
     private void iniciarAutomatico(){
         if (!validarHayProcesos()) return;
@@ -365,7 +360,6 @@ public class VentanaPrincipal extends JFrame {
         actualizarBotones();
     }
 
-    // Correccion - Poll: el timer ya no se detiene esperando el teclado
     private void pasoAutomatico(){
         if (gestor == null || !gestor.hayProcesos()) {
             detenerAutomatico(false);
@@ -418,7 +412,6 @@ public class VentanaPrincipal extends JFrame {
         }
     }
 
-    // Correccion - Poll: ya no detiene el timer de espera ni limpia el campo del teclado
     // E: no aplica
     // S: no aplica (void)
     // R: siempre pide confirmación antes de borrar procesos, memoria, disco y pantalla;

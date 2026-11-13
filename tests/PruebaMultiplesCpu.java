@@ -28,7 +28,7 @@ public class PruebaMultiplesCpu {
         }
         exigir(ocupadas == g.getCpusOcupadas(), "Conteo CPU");
         for (ColaTrabajo cola : new ColaTrabajo[]{g.getPlanificador().getListaTrabajos(),
-                g.getPlanificador().getListaProcesos(), g.getPlanificador().getListaEspera(),
+                g.getPlanificador().getListaProcesos(),
                 g.getPlanificador().getListaFinalizados()}) {
             int limite = 0;
             for (BCP b = cola.getPrimero(); b != null; b = b.getSiguiente()) {

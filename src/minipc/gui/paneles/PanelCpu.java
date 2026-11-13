@@ -38,7 +38,6 @@ public class PanelCpu extends JPanel {
     // E: no aplica
     // S: no aplica (constructor)
     // R: ninguna
-    // Correccion - Poll: se quita la barra de progreso de la instrucción según su peso
     public PanelCpu(){
         super(new BorderLayout());
         setOpaque(false);
@@ -186,7 +185,6 @@ public class PanelCpu extends JPanel {
     // E: gestor (GestorProcesos) - puede ser null
     // S: CPU - la CPU elegida en el selector, o null si no hay gestor
     // R: ninguna
-    // Correccion - Poll: se quita la hora real (HH:mm:ss); queda solo el tiempo en segundos desde 0
     public CPU cpuSeleccionada(GestorProcesos gestor){
         if (gestor == null) return null;
         int indice = Math.max(0, cmbCpuDetalle.getSelectedIndex());
@@ -203,8 +201,6 @@ public class PanelCpu extends JPanel {
         actualizarBCP(gestor);
     }
 
-    // Correccion - Poll: ya no muestra "N de M s" según el peso; cada instrucción dura 1 s.
-    // Tampoco muestra "desde memoria virtual" (memoria virtual partida)
     private void actualizarRegistros(GestorProcesos gestor){
         CPU cpu = cpuSeleccionada(gestor);
         BCP actual = cpu == null ? null : cpu.getBcpActual();
@@ -253,8 +249,6 @@ public class PanelCpu extends JPanel {
         }
     }
 
-    // Correccion - Poll: el tiempo de inicio se muestra en segundos desde 0, no en hora real,
-    // y el alcance ya no se divide en "RAM + virtual"
     // Correccion - Poll (observación PY1): la dirección del BCP muestra el bloque completo que ocupa
     private void actualizarBCP(GestorProcesos gestor){
         BCP b = (gestor == null) ? null : cpuSeleccionada(gestor).getBcpActual();
