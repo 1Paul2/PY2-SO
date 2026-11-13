@@ -323,9 +323,6 @@ public class GestorProcesos {
         for (BCP b = planificador.getListaProcesos().getPrimero(); b != null; b = b.getSiguiente()) {
             escribirBCP(b);
         }
-        for (BCP b = planificador.getListaEspera().getPrimero(); b != null; b = b.getSiguiente()) {
-            escribirBCP(b);
-        }
     }
 
     // Correccion - Poll (observación PY1): antes el BCP entero se escribía como un solo texto en una
@@ -343,8 +340,7 @@ public class GestorProcesos {
     public boolean hayProcesos(){
         return !pendientesLlegada.isEmpty() || enEjecucion() > 0
             || !planificador.getListaTrabajos().estaVacia()
-            || !planificador.getListaProcesos().estaVacia()
-            || !planificador.getListaEspera().estaVacia();
+            || !planificador.getListaProcesos().estaVacia();
     }
 
     // E: no aplica

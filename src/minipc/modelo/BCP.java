@@ -67,7 +67,6 @@ public class BCP {
     private int ahGuardado;           // registro AH (función de INT 21H)
     private int alGuardado;            // registro AL (dato que se lee/escribe con INT 21H)
     private String dxTextoGuardado;    // nombre de archivo guardado en DX (MOV DX, "archivo.txt")
-    private int desplazamientoPC;      // posición del PC dentro del programa al suspenderse (-1 si no)
     private java.util.Map<String, Integer> punterosLectura;   // próxima línea a leer de cada archivo abierto
             
         // Correccion - Poll: se quitan enRAM, baseVirtual y avisoVirtual (memoria virtual
@@ -94,7 +93,6 @@ public class BCP {
             this.ahGuardado = 0;
             this.alGuardado = 0;
             this.dxTextoGuardado = null;
-            this.desplazamientoPC = -1;
             this.punterosLectura = new java.util.HashMap<>();
             this.tiempoEmpleado = 0;
             this.cpuId = -1;
@@ -380,12 +378,6 @@ public class BCP {
         }
         public void setDxTextoGuardado(String t){
             this.dxTextoGuardado = t; 
-        }
-        public int getDesplazamientoPC(){
-            return desplazamientoPC; 
-        }
-        public void setDesplazamientoPC(int d){ 
-            this.desplazamientoPC = d; 
         }
 
         // E: archivo (String) - nombre del archivo

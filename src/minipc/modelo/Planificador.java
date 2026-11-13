@@ -26,7 +26,6 @@ public class Planificador {
     // Colas
     private ColaTrabajo listaTrabajos;     // Nuevo: en disco, sin memoria
     private ColaTrabajo listaProcesos;     // Preparado: en memoria, esperando CPU
-    private ColaTrabajo listaEspera;       // En espera: bloqueado por E/S 
     private ColaTrabajo listaFinalizados;  // Finalizado
 
     private Memoria memoria;
@@ -75,7 +74,6 @@ public class Planificador {
         this.maxProcesosEnMemoria = MAX_PROCESOS_EN_MEMORIA * cantidadCpus;
         this.listaTrabajos = new ColaTrabajo();
         this.listaProcesos = new ColaTrabajo();
-        this.listaEspera = new ColaTrabajo();
         this.listaFinalizados = new ColaTrabajo();
         this.memoria = memoria;
         this.disco = disco;
@@ -115,16 +113,13 @@ public class Planificador {
 
     // E: enEjecucion (int) - cantidad de CPU ocupadas, 0 si no
     // S: no aplica (void)
-    // R: respeta FCFS estricto: si el primero no cabe, los de atrás esperan.
-    //    Si el primero no puede entrar (límite de 5 procesos o falta de memoria) y hay
-    //    un proceso en memoria bloqueado esperando el teclado, ese proceso se SUSPENDE
-    //    (sale de la memoria) para darle espacio.
+    // R: respeta FCFS estricto: si el primero no cabe (límite de procesos o falta de memoria),
+    //    los de atrás esperan en la lista de trabajos hasta que se libere espacio.
     public void prepararSiguientes(int enEjecucion) {
         while (!listaTrabajos.estaVacia()) {
             boolean cargado = procesosEnMemoria(enEjecucion) < maxProcesosEnMemoria
                 && intentarCargar(listaTrabajos.getPrimero());
-            if (cargado) continue;
-            if (!suspenderUnoEnEspera(listaTrabajos.getPrimero())) break;   // nadie para suspender: espera
+            if (!cargado) break;
         }
     }
 
@@ -140,16 +135,7 @@ public class Planificador {
 
         List<String> lineas = disco.leerArchivo(bcp.getArchivosAbiertos().get(0));
         if (!gestorMemoria.cargar(bcp, lineas)) return false;
-        int hueco = bcp.getDireccionBase();
-
-        if (bcp.getDesplazamientoPC() >= 0) {
-            // Proceso que estaba suspendido: se reubica y continúa donde iba
-            bcp.setPcGuardado(hueco + bcp.getDesplazamientoPC());
-            bcp.setDesplazamientoPC(-1);
-            mensajes.add("[SO] P" + bcp.getIdProceso() + " vuelve a memoria (nueva base " + hueco + ")");
-        } else {
-            bcp.setPcGuardado(hueco);
-        }
+        bcp.setPcGuardado(bcp.getDireccionBase());
 
         slotsBCP[slot] = true;
         bcp.setDireccionBCP(slot * BCP.TAMANO_BLOQUE);
@@ -158,24 +144,6 @@ public class Planificador {
         listaTrabajos.desencolar();
         listaProcesos.encolar(bcp);
         return true;
-    }
-
-    // E: necesita (BCP) - el trabajo que no pudo entrar a memoria
-    // S: boolean - true si se suspendió algún proceso
-    // R: solo se suspenden procesos "En espera" (bloqueados por teclado), que no usan la CPU.
-    //    Su programa sigue guardado en disco, así que al volver se recarga desde ahí.
-    private boolean suspenderUnoEnEspera(BCP necesita){
-        for (BCP b = listaEspera.getPrimero(); b != null; b = b.getSiguiente()) {
-            if (!"En espera".equals(b.getEstado())) continue;
-
-            b.setDesplazamientoPC(b.getPcGuardado() - b.getDireccionBase());
-            liberarMemoria(b);
-            b.setEstado(BCP.SUSPENDIDO_ESPERA);      
-            mensajes.add("[SO] P" + b.getIdProceso() + " suspendido: sale de memoria mientras espera el teclado,"
-                + " para dar espacio a P" + necesita.getIdProceso());
-            return true;
-        }
-        return false;
     }
 
     // Libera la reserva completa, incluidos marcos y respaldo virtual.
@@ -192,14 +160,10 @@ public class Planificador {
     }
 
     // E: enEjecucion (int) - cantidad de CPU ocupadas
-    // S: int - procesos que ocupan memoria (los suspendidos no cuentan)
+    // S: int - procesos que ocupan memoria (preparados + en ejecución)
     // R: ninguna
     public int procesosEnMemoria(int enEjecucion){
-        int enEspera = 0;
-        for (BCP b = listaEspera.getPrimero(); b != null; b = b.getSiguiente()) {
-            if (!b.getEstado().startsWith("Suspendido")) enEspera++;
-        }
-        return listaProcesos.tamanio() + enEspera + enEjecucion;
+        return listaProcesos.tamanio() + enEjecucion;
     }
 
     private int slotLibre(){
@@ -240,32 +204,6 @@ public class Planificador {
         listaProcesos.encolar(bcp);
     }
 
-    // E: bcp (BCP) - proceso que pidió entrada de teclado
-    // S: no aplica (void)
-    // R: ninguna
-    public void enEspera(BCP bcp){
-        bcp.setEstado("En espera");
-        listaEspera.encolar(bcp);
-    }
-
-    // E: no aplica
-    // S: BCP - el primer proceso en espera, ya movido al final de la cola de preparados
-    // R: devuelve null si no hay procesos en espera
-    public BCP salirDeEspera(){
-        BCP bcp = listaEspera.desencolar();
-        if (bcp == null) return null;
-        if (bcp.getEstado().startsWith("Suspendido")) {
-            // Ya ocurrió su evento, pero sigue fuera de memoria
-            bcp.setEstado(BCP.SUSPENDIDO_PREPARADO);
-            // No está en memoria: vuelve a la lista de trabajos para recargarse cuando haya espacio
-            listaTrabajos.encolar(bcp);
-        } else {
-            bcp.setEstado("Preparado");
-            listaProcesos.encolar(bcp);
-        }
-        return bcp;
-    }
-
     // Correccion - Poll (observación PY1): recibe si el proceso terminó por un error, para dejarlo
     // como "Finalizado con error" en vez de "Finalizado"
     // E: bcp (BCP) - proceso que terminó; conError (boolean) - true si terminó por un error
@@ -284,9 +222,6 @@ public class Planificador {
     }
     public ColaTrabajo getListaProcesos() {
         return listaProcesos; 
-    }
-    public ColaTrabajo getListaEspera() {
-        return listaEspera; 
     }
     public ColaTrabajo getListaFinalizados() {
         return listaFinalizados; 
