@@ -48,15 +48,12 @@ public class PanelCola extends Tarjeta {
         tablaCola.getColumnModel().getColumn(3).setPreferredWidth(50);
         tablaCola.getColumnModel().getColumn(4).setPreferredWidth(60);
         getContenido().add(Componentes.scroll(tablaCola), BorderLayout.CENTER);
-        JScrollPane estados = Componentes.scroll(crearLeyendaEstados());
-        estados.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_NEVER);
-        estados.setPreferredSize(new Dimension(300, 48));
-        getContenido().add(estados, BorderLayout.SOUTH);
+        getContenido().add(crearLeyendaEstados(), BorderLayout.SOUTH);
     }
 
     // Correccion - Poll (observación PY1): la leyenda incluye "Finalizado con error"
     private JPanel crearLeyendaEstados(){
-        JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 6));
+        JPanel p = new JPanel(new GridLayout(2, 3, 4, 4));   // 2 filas: entra sin barra de desplazamiento
         p.setOpaque(false);
         for (String e : new String[]{"Nuevo", "Preparado", "Ejecución", "En espera", BCP.FINALIZADO, BCP.FINALIZADO_ERROR}) {
             Distintivo d = new Distintivo();

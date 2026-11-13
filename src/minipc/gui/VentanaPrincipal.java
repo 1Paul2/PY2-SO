@@ -15,20 +15,24 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import minipc.gui.Componentes.Boton;
+import minipc.gui.Componentes.Desplegable;
 import minipc.gui.Componentes.Distintivo;
 import minipc.gui.Componentes.Tarjeta;
 import minipc.gui.dialogos.DialogoConfiguracion;
 import minipc.gui.dialogos.DialogoEstadisticas;
 import minipc.gui.dialogos.DialogoLlegadas;
 import minipc.gui.paneles.PanelCola;
-import minipc.gui.paneles.PanelCpu;
+import minipc.gui.paneles.PanelConsola;
+import minipc.gui.paneles.PanelDetalleCpu;
 import minipc.gui.paneles.PanelDisco;
-import minipc.gui.paneles.PanelDispositivos;
 import minipc.gui.paneles.PanelMemoria;
-import minipc.gui.paneles.PanelMonitorConsola;
+import minipc.gui.paneles.PanelMonitor;
 import minipc.gui.paneles.PanelRecursos;
 import minipc.gui.paneles.PanelTablaEjecucion;
 import minipc.gui.paneles.PanelTablaPaginas;
+import minipc.gui.paneles.PanelTarjetasCpu;
+import minipc.hardware.CPU;
+import minipc.hardware.EstrategiaMemoria;
 import minipc.modelo.BCP;
 import minipc.modelo.GestorProcesos;
 import minipc.modelo.Instruccion;
@@ -36,9 +40,11 @@ import minipc.util.ConfiguracionSistema;
 import minipc.util.ParserASM;
 
 /**
- * VentanaPrincipal: ventana del Mini PC. Arma el encabezado con los botones, ubica los
- * paneles (paquete minipc.gui.paneles) y reacciona a los botones. Cada panel sabe
- * dibujarse a sí mismo con actualizar(gestor); toda la lógica la tiene GestorProcesos.
+ * VentanaPrincipal: ventana del Mini PC. Arriba el encabezado con la configuración activa y
+ * los botones agrupados por paso (preparar, ejecutar, resultados); debajo una tarjeta por CPU;
+ * a la izquierda la cola de trabajos con los recursos y el BCP desplegables; al centro las
+ * pestañas grandes (tabla de ejecución, memoria, páginas, disco, monitor y consola).
+ * Cada panel se dibuja con actualizar(gestor); toda la lógica la tiene GestorProcesos.
  */
 public class VentanaPrincipal extends JFrame {
 
@@ -55,20 +61,24 @@ public class VentanaPrincipal extends JFrame {
 
     // ---- Encabezado y barra de herramientas ----
     private JLabel lblReloj;
+    private Distintivo chipCpus, chipAlgoritmo, chipMemoria;
     private Boton btnCargar, btnEjecutar, btnPaso, btnDetener, btnLlegadas, btnLimpiar, btnEstadisticas, btnConfigurar, btnSalir;
     private JComboBox<String> cmbVelocidad;
 
     // ---- Paneles ----
+    private PanelTarjetasCpu panelTarjetas;
     private PanelCola panelCola;
     private PanelRecursos panelRecursos;
-    private PanelDispositivos panelDispositivos;
-    private Tarjeta tarjetaMemoria;
+    private PanelDetalleCpu panelDetalle;
+    private Desplegable despRecursos, despDetalle;
+    private Tarjeta tarjetaVistas;
+    private JTabbedPane vistas;
+    private PanelTablaEjecucion panelEjecucion;
     private PanelMemoria panelMemoria;
     private PanelTablaPaginas panelPaginas;
-    private PanelTablaEjecucion panelEjecucion;
-    private PanelMonitorConsola panelMonitorConsola;
     private PanelDisco panelDisco;
-    private PanelCpu panelCpu;
+    private PanelMonitor panelMonitor;
+    private PanelConsola panelConsola;
 
     // E: no aplica
     // S: no aplica constructor
@@ -96,15 +106,17 @@ public class VentanaPrincipal extends JFrame {
     //ENCABEZADO
 
 
+    // E: no aplica
+    // S: JPanel - título con la configuración activa y el reloj; abajo los botones por paso
+    // R: ninguna
     private JPanel crearEncabezado(){
-        JPanel panel = new JPanel(new BorderLayout(0, 12));
+        JPanel panel = new JPanel(new BorderLayout(0, 10));
         panel.setOpaque(false);
 
-        // ---- Título ----
+        // ---- Título, configuración activa y reloj ----
         JPanel fila1 = new JPanel(new BorderLayout());
         fila1.setOpaque(false);
-
-        JPanel titulo = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
+        JPanel titulo = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         titulo.setOpaque(false);
         JLabel logo = new JLabel("SO", SwingConstants.CENTER) {
             @Override protected void paintComponent(Graphics g){
@@ -118,73 +130,98 @@ public class VentanaPrincipal extends JFrame {
         };
         logo.setFont(new Font(Tema.TITULO.getFamily(), Font.BOLD, 16));
         logo.setForeground(Color.WHITE);
-        logo.setPreferredSize(new Dimension(46, 46));
+        logo.setPreferredSize(new Dimension(44, 44));
         titulo.add(logo);
-
-        JPanel textos = new JPanel(new GridLayout(1, 1));
-        textos.setOpaque(false);
         JLabel lblTitulo = new JLabel("Mini PC  ·  Gestor de Procesos");
         lblTitulo.setFont(Tema.TITULO);
         lblTitulo.setForeground(Tema.TEXTO);
-        textos.add(lblTitulo);
-        titulo.add(textos);
+        titulo.add(lblTitulo);
+        titulo.add(Box.createHorizontalStrut(6));
+        chipCpus = chip("", Tema.TEXTO, Color.WHITE);
+        chipAlgoritmo = chip("", Tema.TEXTO, Color.WHITE);
+        chipMemoria = chip("", Tema.TEXTO, Color.WHITE);
+        chipCpus.setToolTipText("Cantidad de CPU (se cambia en Configuración)");
+        chipAlgoritmo.setToolTipText("Algoritmo de planificación y sus parámetros");
+        chipMemoria.setToolTipText("Estrategia de asignación de memoria");
+        titulo.add(chipCpus);
+        titulo.add(chipAlgoritmo);
+        titulo.add(chipMemoria);
         fila1.add(titulo, BorderLayout.WEST);
-
-        // ---- Reloj ----
-        JPanel reloj = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
-        reloj.setOpaque(false);
         lblReloj = chip("Tiempo  0 s", Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
+        lblReloj.setFont(new Font(Tema.TITULO.getFamily(), Font.BOLD, 15));
+        JPanel reloj = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 2));
+        reloj.setOpaque(false);
         reloj.add(lblReloj);
         fila1.add(reloj, BorderLayout.EAST);
         panel.add(fila1, BorderLayout.NORTH);
 
-        // ---- Botones ----
-        JPanel barra = new JPanel(new BorderLayout());
-        barra.setOpaque(false);
-        JPanel botones = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        botones.setOpaque(false);
-
-        btnCargar       = new Boton("Cargar archivos", Tema.VERDE_OSCURO);
-        btnEjecutar     = new Boton("Ejecutar", Tema.VERDE);
-        btnPaso         = new Boton("Siguiente", Tema.AZUL);
-        btnDetener      = new Boton("Detener", Tema.ROJO);
-        btnLlegadas     = new Boton("Llegadas", Tema.AMBAR);
-        btnLimpiar      = new Boton("Limpiar", Tema.GRIS);
-        btnEstadisticas = new Boton("Estadísticas", Tema.MORADO);
+        // ---- Botones agrupados en el orden de uso ----
         btnConfigurar   = new Boton("Configuración", new Color(0x334155));
+        btnCargar       = new Boton("Cargar .asm", Tema.VERDE_OSCURO);
+        btnLlegadas     = new Boton("Llegadas", Tema.AMBAR);
+        btnEjecutar     = new Boton("▶  Ejecutar", Tema.VERDE);
+        btnPaso         = new Boton("Siguiente ›", Tema.AZUL);
+        btnDetener      = new Boton("■  Detener", Tema.ROJO);
+        btnEstadisticas = new Boton("Estadísticas", Tema.MORADO);
+        btnLimpiar      = new Boton("Limpiar", Tema.GRIS);
         btnSalir        = new Boton("Salir", new Color(0xB91C1C));
-        btnSalir.setToolTipText("Cerrar el Mini PC");
 
+        btnConfigurar.setToolTipText("CPU, algoritmo con sus parámetros, tamaños de memoria y estrategia de asignación");
         btnCargar.setToolTipText("Cargar uno o varios archivos .asm");
+        btnLlegadas.setToolTipText("Editar los tiempos de llegada de los procesos que todavía no llegan");
         btnEjecutar.setToolTipText("Ejecutar automáticamente todos los procesos hasta su finalización");
         btnPaso.setToolTipText("Avanzar un segundo global en todas las CPU");
         btnDetener.setToolTipText("Pausar la ejecución automática");
         btnDetener.setEnabled(false);
-        btnLlegadas.setToolTipText("Editar los tiempos de llegada de los procesos que todavía no llegan");
-
-        for (Boton b : new Boton[]{btnCargar, btnEjecutar, btnPaso, btnDetener, btnLlegadas, btnLimpiar, btnEstadisticas, btnConfigurar}) {
-            botones.add(b);
+        btnEstadisticas.setToolTipText("Estadísticas de esta ejecución y el acumulado de todas");
+        btnLimpiar.setToolTipText("Borrar los procesos para empezar otra ejecución (el acumulado se conserva)");
+        btnSalir.setToolTipText("Cerrar el Mini PC");
+        for (Boton b : new Boton[]{btnConfigurar, btnCargar, btnLlegadas, btnEjecutar, btnPaso, btnDetener, btnEstadisticas, btnLimpiar}) {
+            b.setBorder(new EmptyBorder(8, 12, 8, 12));   // un poco más compactos para que entren en 1280 px
         }
-        barra.add(botones, BorderLayout.WEST);
 
-        JPanel velocidad = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        velocidad.setOpaque(false);
-        JLabel lblVel = new JLabel("Velocidad de Ejecutar:");
-        lblVel.setFont(Tema.NORMAL);
-        lblVel.setForeground(Tema.TEXTO_SUAVE);
         // Por defecto, "Ejecutar" avanza 1 segundo de CPU por cada segundo real,
-        // igual que presionar "Siguiente" una vez por segundo.
-        // "Instantánea" corre todo de una vez.
+        // igual que presionar "Siguiente" una vez por segundo. "Instantánea" corre todo de una vez.
         cmbVelocidad = new JComboBox<>(new String[]{"1 segundo", "Instantánea"});
         cmbVelocidad.setSelectedIndex(0);
         cmbVelocidad.setFont(Tema.NORMAL);
+        cmbVelocidad.setToolTipText("Velocidad del botón Ejecutar");
         cmbVelocidad.addActionListener(e -> timerAuto.setDelay(retardoSeleccionado()));
-        velocidad.add(lblVel);
-        velocidad.add(cmbVelocidad);
-        velocidad.add(Box.createHorizontalStrut(8));
-        velocidad.add(btnSalir);
-        barra.add(velocidad, BorderLayout.EAST);
+        cmbVelocidad.setPreferredSize(new Dimension(112, 32));
+
+        JPanel barra = new JPanel(new BorderLayout()) {
+            @Override protected void paintComponent(Graphics g){
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(Tema.TARJETA);
+                g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 16, 16);
+                g2.setColor(Tema.BORDE);
+                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 16, 16);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        barra.setOpaque(false);
+        barra.setBorder(new EmptyBorder(8, 12, 8, 12));
+        JPanel pasos = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+        pasos.setOpaque(false);
+        pasos.add(grupo("1 · PREPARAR"));
+        pasos.add(btnConfigurar);
+        pasos.add(btnCargar);
+        pasos.add(btnLlegadas);
+        pasos.add(separador());
+        pasos.add(grupo("2 · EJECUTAR"));
+        pasos.add(btnEjecutar);
+        pasos.add(btnPaso);
+        pasos.add(btnDetener);
+        pasos.add(cmbVelocidad);
+        pasos.add(separador());
+        pasos.add(grupo("3 · RESULTADOS"));
+        pasos.add(btnEstadisticas);
+        pasos.add(btnLimpiar);
+        barra.add(pasos, BorderLayout.CENTER);
         panel.add(barra, BorderLayout.SOUTH);
+        reloj.add(btnSalir);
 
         btnCargar.addActionListener(e -> cargarArchivos());
         btnEjecutar.addActionListener(e -> iniciarAutomatico());
@@ -198,7 +235,7 @@ public class VentanaPrincipal extends JFrame {
         return panel;
     }
 
-    private JLabel chip(String texto, Color frente, Color fondo){
+    private Distintivo chip(String texto, Color frente, Color fondo){
         Distintivo d = new Distintivo();
         d.setFont(Tema.NEGRITA);
         d.setBorder(new EmptyBorder(6, 14, 6, 14));
@@ -206,69 +243,78 @@ public class VentanaPrincipal extends JFrame {
         return d;
     }
 
+    private JLabel grupo(String texto){
+        JLabel l = new JLabel(texto);
+        l.setFont(Tema.PEQUENA_B);
+        l.setForeground(Tema.TEXTO_SUAVE);
+        l.setBorder(new EmptyBorder(0, 4, 0, 2));
+        return l;
+    }
+
+    private JComponent separador(){
+        JSeparator s = new JSeparator(SwingConstants.VERTICAL);
+        s.setPreferredSize(new Dimension(10, 30));
+        s.setForeground(Tema.BORDE);
+        return s;
+    }
+
     //CUERPO
 
 
     // E: no aplica
-    // S: JPanel - las tres columnas: cola y recursos | memoria, monitor y disco | detalle de CPU
+    // S: JPanel - tarjetas de CPU arriba; abajo la cola (izquierda) y las pestañas (centro)
     // R: ninguna
     private JPanel crearCuerpo(){
+        panelTarjetas = new PanelTarjetasCpu(configuracion);
+        panelTarjetas.setPreferredSize(new Dimension(1000, 108));
+        // Clic en una tarjeta: se abre el BCP de esa CPU
+        panelTarjetas.setAlElegirCpu(i -> { despDetalle.setAbierto(true); actualizarVista(); });
+
+        // Columna izquierda: cola con toda la altura; recursos y BCP desplegables
         panelCola = new PanelCola();
         panelRecursos = new PanelRecursos(configuracion);
-        panelDispositivos = new PanelDispositivos(configuracion);
+        panelDetalle = new PanelDetalleCpu();
+        despRecursos = new Desplegable("Recursos del sistema", Tema.AZUL, panelRecursos, false);
+        despDetalle = new Desplegable("BCP y registros", Tema.MORADO, panelDetalle, false);
+        JPanel izquierda = Componentes.columna(new Component[]{panelCola, despRecursos, despDetalle}, new double[]{1.0, 0.0, 0.0});
+        izquierda.setPreferredSize(new Dimension(430, 600));
+        izquierda.setMinimumSize(new Dimension(380, 0));
+
+        // Centro: pestañas grandes
+        panelEjecucion = new PanelTablaEjecucion(configuracion);
         panelMemoria = new PanelMemoria();
         panelPaginas = new PanelTablaPaginas();
-        panelEjecucion = new PanelTablaEjecucion(configuracion);
-        panelMonitorConsola = new PanelMonitorConsola();
         panelDisco = new PanelDisco(configuracion);
-        panelCpu = new PanelCpu();
+        panelMonitor = new PanelMonitor();
+        panelConsola = new PanelConsola();
+        vistas = new JTabbedPane();
+        vistas.setFont(Tema.NEGRITA);
+        vistas.addTab("Tabla de ejecución", panelEjecucion);
+        vistas.addTab("Memoria (RAM)", panelMemoria);
+        vistas.addTab("Tabla de páginas", panelPaginas);
+        vistas.addTab("Disco", panelDisco);
+        vistas.addTab("Monitor", panelMonitor);
+        vistas.addTab("Consola del S.O.", panelConsola);
+        vistas.setToolTipTextAt(0, "Qué proceso ejecutó cada núcleo en cada segundo");
+        vistas.setToolTipTextAt(1, "Dónde está cada proceso en la memoria principal");
+        vistas.setToolTipTextAt(3, "Índice de archivos, archivos y memoria virtual");
+        vistas.setToolTipTextAt(4, "Lo que imprimen los programas con INT 10H");
+        vistas.setToolTipTextAt(5, "Lo que hace el sistema operativo: despachador, memoria, archivos y errores");
+        tarjetaVistas = new Tarjeta("Memoria y ejecución", Tema.VERDE);
+        tarjetaVistas.getContenido().add(vistas, BorderLayout.CENTER);
 
-        // Elegir una CPU en la tabla de Dispositivos o en el selector muestra su detalle
-        panelDispositivos.setAlElegirCpu(panelCpu::elegirCpu);
-        panelCpu.setAlCambiarCpu(() -> {
-            if (gestor != null) {
-                panelCpu.actualizar(gestor);
-                panelMemoria.actualizar(gestor, panelCpu.cpuSeleccionada(gestor));
-            }
-        });
-
-        // Columna izquierda
-        JPanel izquierda = Componentes.columna(new Component[]{panelCola, panelRecursos, panelDispositivos}, new double[]{1.0, 0.0, 0.0});
-
-        // Columna central: memoria (con sus pestañas) arriba; monitor y disco abajo
-        tarjetaMemoria = new Tarjeta("Memoria principal", Tema.VERDE);
-        JTabbedPane vistasMemoria = new JTabbedPane();
-        vistasMemoria.addTab("RAM física", panelMemoria);
-        vistasMemoria.addTab("Tabla de páginas", panelPaginas);
-        vistasMemoria.addTab("Tabla de ejecución", panelEjecucion);
-        tarjetaMemoria.getContenido().add(vistasMemoria, BorderLayout.CENTER);
-        JPanel abajo = new JPanel(new GridLayout(1, 2, 12, 0));
+        JPanel abajo = new JPanel(new BorderLayout(12, 0));
         abajo.setOpaque(false);
-        abajo.add(panelMonitorConsola);
-        abajo.add(panelDisco);
-        JPanel central = Componentes.columna(new Component[]{tarjetaMemoria, abajo}, new double[]{0.58, 0.42});
+        abajo.add(izquierda, BorderLayout.WEST);
+        abajo.add(tarjetaVistas, BorderLayout.CENTER);
 
-        JPanel cuerpo = new JPanel(new GridBagLayout());
+        JPanel cuerpo = new JPanel(new BorderLayout(0, 12));
         cuerpo.setOpaque(false);
-        GridBagConstraints g = new GridBagConstraints();
-        g.fill = GridBagConstraints.BOTH;
-        g.weighty = 1;
-        g.insets = new Insets(0, 0, 0, 12);
-
-        g.gridx = 0; g.weightx = 0.27;
-        izquierda.setPreferredSize(new Dimension(380, 700));
-        izquierda.setMinimumSize(new Dimension(300, 0));
-        cuerpo.add(izquierda, g);
-        g.gridx = 1; g.weightx = 0.45;
-        central.setPreferredSize(new Dimension(650, 700));
-        central.setMinimumSize(new Dimension(400, 0));
-        cuerpo.add(central, g);
-        g.gridx = 2; g.weightx = 0.28; g.insets = new Insets(0, 0, 0, 0);
-        panelCpu.setPreferredSize(new Dimension(400, 700));
-        panelCpu.setMinimumSize(new Dimension(320, 0));
-        cuerpo.add(panelCpu, g);
+        cuerpo.add(panelTarjetas, BorderLayout.NORTH);
+        cuerpo.add(abajo, BorderLayout.CENTER);
         return cuerpo;
     }
+
 
 
     // ACCIONES
@@ -486,25 +532,66 @@ public class VentanaPrincipal extends JFrame {
     // S: no aplica (void)
     // R: refresca todos los paneles con el estado actual del GestorProcesos
     private void actualizarVista(){
-        panelCpu.setCantidadCpus(gestor == null ? configuracion.getCantidadCpus() : gestor.getCantidadCpus());
-        panelDispositivos.actualizar(gestor);
+        panelTarjetas.actualizar(gestor);
+        CPU cpuElegida = gestor == null ? null
+            : gestor.getCpu(Math.min(panelTarjetas.getElegida(), gestor.getCantidadCpus() - 1));
         actualizarEncabezado();
         panelCola.actualizar(gestor);
         panelRecursos.actualizar(gestor);
-        panelCpu.actualizar(gestor);
-        tarjetaMemoria.setExtra(gestor == null ? configuracion.getEstrategiaMemoria().toString()
-            : gestor.getGestorMemoria().getEstrategia() + " · fallos " + gestor.getGestorMemoria().getFallosPagina());
-        panelMemoria.actualizar(gestor, panelCpu.cpuSeleccionada(gestor));
+        panelDetalle.actualizar(gestor, cpuElegida);
+        BCP enCpu = cpuElegida == null ? null : cpuElegida.getBcpActual();
+        despDetalle.setTitulo("BCP y registros · CPU " + (panelTarjetas.getElegida() + 1)
+            + (enCpu == null ? "" : " · P" + enCpu.getIdProceso()));
+        EstrategiaMemoria estrategia = gestor == null ? configuracion.getEstrategiaMemoria()
+            : gestor.getGestorMemoria().getEstrategia();
+        tarjetaVistas.setExtra(estrategia + (gestor == null ? "" : " · fallos de página " + gestor.getGestorMemoria().getFallosPagina()));
+        panelEjecucion.actualizar(gestor);
+        panelMemoria.actualizar(gestor, cpuElegida);
         panelPaginas.actualizar(gestor);
         panelDisco.actualizar(gestor);
-        panelMonitorConsola.actualizar(gestor);
-        panelEjecucion.actualizar(gestor);
+        panelMonitor.actualizar(gestor);
+        panelConsola.actualizar(gestor);
+        // La tabla de páginas solo tiene sentido con paginación
+        vistas.setEnabledAt(2, estrategia.esPaginada());
+        vistas.setToolTipTextAt(2, estrategia.esPaginada() ? "Marco de RAM o posición en disco de cada página"
+            : "Solo se usa con paginación física o virtual");
+        if (vistas.getSelectedIndex() == 2 && !estrategia.esPaginada()) vistas.setSelectedIndex(1);
         actualizarBotones();
     }
 
+    // E: no aplica
+    // S: no aplica (void)
+    // R: el reloj y los chips con la configuración activa
     private void actualizarEncabezado(){
-        String texto = "Tiempo  " + (gestor == null ? 0 : gestor.getReloj()) + " s";
-        ((Distintivo) lblReloj).setColores(texto, Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
+        ((Distintivo) lblReloj).setColores("Tiempo  " + (gestor == null ? 0 : gestor.getReloj()) + " s",
+            Tema.VERDE_OSCURO, Tema.VERDE_CLARO);
+        int cpus = gestor == null ? configuracion.getCantidadCpus() : gestor.getCantidadCpus();
+        chipCpus.setColores(cpus + (cpus == 1 ? " CPU" : " CPU"), Tema.TEXTO, Color.WHITE);
+        chipAlgoritmo.setColores(textoAlgoritmo(), Tema.TEXTO, Color.WHITE);
+        chipMemoria.setColores(textoMemoria(), Tema.TEXTO, Color.WHITE);
+    }
+
+    // S: String - el algoritmo de CPU con sus parámetros, p. ej. "Round Robin · q = 2"
+    private String textoAlgoritmo(){
+        int q = configuracion.getQuantumRR();
+        switch (configuracion.getAlgoritmoCpu()) {
+            case "RR":      return "Round Robin · q = " + q;
+            case "SRR":     return "Selfish RR · q = " + q + " · a = " + configuracion.getTasaNuevosSRR()
+                                + " · b = " + configuracion.getTasaAceptadosSRR();
+            case "Lottery": return "Lottery · q = " + q;
+            case "MLFQ":    return "MLFQ · " + configuracion.getNivelesMLFQ() + " niveles · q = " + q
+                                + " · promoción " + configuracion.getPeriodoBoostMLFQ() + " s";
+            default:        return configuracion.getAlgoritmoCpu();
+        }
+    }
+
+    // S: String - la estrategia de memoria con su parámetro, p. ej. "Paginación virtual - FIFO · página 8"
+    private String textoMemoria(){
+        EstrategiaMemoria e = configuracion.getEstrategiaMemoria();
+        if (e.esPaginada()) return e + " · página " + configuracion.getTamanoPagina();
+        if (e == EstrategiaMemoria.FIJA_IGUAL) return e + " · " + configuracion.getTamanoParticion();
+        if (e == EstrategiaMemoria.FIJA_VARIABLE) return e + " · " + configuracion.getListaParticiones();
+        return e.toString();
     }
 
     private void actualizarBotones(){

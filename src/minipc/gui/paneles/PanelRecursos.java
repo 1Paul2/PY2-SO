@@ -7,12 +7,10 @@ package minipc.gui.paneles;
  *
  */
 
-import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.GridLayout;
 import javax.swing.JPanel;
 import minipc.gui.Componentes.BarraUso;
-import minipc.gui.Componentes.Tarjeta;
 import minipc.gui.Tema;
 import minipc.hardware.Disco;
 import minipc.hardware.Memoria;
@@ -22,10 +20,10 @@ import minipc.modelo.Planificador;
 import minipc.util.ConfiguracionSistema;
 
 /**
- * PanelRecursos: tarjeta "Recursos del sistema" con las barras de uso de procesos en
+ * PanelRecursos: contenido de la sección "Recursos del sistema": las barras de uso de procesos en
  * memoria, memoria de usuario, memoria virtual, zona del S.O. (BCP) y almacenamiento.
  */
-public class PanelRecursos extends Tarjeta {
+public class PanelRecursos extends JPanel {
 
     private final ConfiguracionSistema configuracion;
     private final BarraUso barraProcesos, barraMemoria, barraBCP, barraDisco, barraVirtual;
@@ -34,10 +32,10 @@ public class PanelRecursos extends Tarjeta {
     // S: no aplica (constructor)
     // R: ninguna
     public PanelRecursos(ConfiguracionSistema configuracion){
-        super("Recursos del sistema", Tema.AZUL);
+        super(new GridLayout(5, 1, 0, 10));
+        setOpaque(false);
         this.configuracion = configuracion;
-        JPanel barras = new JPanel(new GridLayout(5, 1, 0, 10));
-        barras.setOpaque(false);
+        JPanel barras = this;
         barraProcesos = new BarraUso("Procesos en memoria", Tema.VERDE);
         barraMemoria = new BarraUso("Memoria de usuario", Tema.AZUL);
         barraBCP = new BarraUso("Zona S.O. (BCP)", Tema.NARANJA_SO);
@@ -48,7 +46,6 @@ public class PanelRecursos extends Tarjeta {
         barras.add(barraVirtual);
         barras.add(barraBCP);
         barras.add(barraDisco);
-        getContenido().add(barras, BorderLayout.NORTH);
     }
 
     // E: gestor (GestorProcesos) - puede ser null si todavía no hay programas

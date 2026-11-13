@@ -9,12 +9,12 @@ package minipc.gui.paneles;
 
 import java.awt.*;
 import javax.swing.JLabel;
+import javax.swing.JPanel;
 import javax.swing.JTable;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import minipc.gui.Componentes;
-import minipc.gui.Componentes.Tarjeta;
 import minipc.gui.Tema;
 import minipc.hardware.Disco;
 import minipc.hardware.GestorMemoria;
@@ -22,21 +22,26 @@ import minipc.modelo.GestorProcesos;
 import minipc.util.ConfiguracionSistema;
 
 /**
- * PanelDisco: tarjeta "Disco". Muestra cada posición del almacenamiento secundario con
+ * PanelDisco: pestaña "Disco". Muestra cada posición del almacenamiento secundario con
  * su zona: índice de archivos, archivos o memoria virtual (con la página que guarda).
  */
-public class PanelDisco extends Tarjeta {
+public class PanelDisco extends JPanel {
 
     private final ConfiguracionSistema configuracion;
     private final DefaultTableModel modeloDisco;
     private final JTable tablaDisco;
+    private final JLabel lblResumen = new JLabel(" ");
 
     // E: configuracion (ConfiguracionSistema) - da el tamaño del disco y de las páginas
     // S: no aplica (constructor)
     // R: ninguna
     public PanelDisco(ConfiguracionSistema configuracion){
-        super("Disco", Tema.MORADO);
+        super(new BorderLayout(0, 6));
+        setOpaque(false);
         this.configuracion = configuracion;
+        lblResumen.setFont(Tema.PEQUENA_B);
+        lblResumen.setForeground(Tema.TEXTO_SUAVE);
+        add(lblResumen, BorderLayout.NORTH);
         modeloDisco = new DefaultTableModel(new String[]{"Pos", "Valor en disco", "Zona"}, 0) {
             @Override public boolean isCellEditable(int r, int c){ return false; }
         };
@@ -49,7 +54,7 @@ public class PanelDisco extends Tarjeta {
         tablaDisco.getColumnModel().getColumn(0).setMinWidth(60);
         tablaDisco.getColumnModel().getColumn(1).setPreferredWidth(220);
         tablaDisco.getColumnModel().getColumn(2).setPreferredWidth(80);
-        getContenido().add(Componentes.scroll(tablaDisco), BorderLayout.CENTER);
+        add(Componentes.scroll(tablaDisco), BorderLayout.CENTER);
     }
 
     // E: gestor (GestorProcesos) - puede ser null si todavía no hay programas
@@ -58,12 +63,12 @@ public class PanelDisco extends Tarjeta {
     public void actualizar(GestorProcesos gestor){
         if (gestor == null) {
             modeloDisco.setRowCount(0);
-            setExtra(configuracion.getAlmacenamientoSecundario() + " posiciones");
+            lblResumen.setText(configuracion.getAlmacenamientoSecundario() + " posiciones");
             return;
         }
         Disco d = gestor.getDisco();
         int total = d.getTamanoTotal();
-        setExtra(total + " · " + d.virtualUsada() + "/" + d.getTamanoMemoriaVirtual() + " virtual");
+        lblResumen.setText(total + " posiciones · memoria virtual usada " + d.virtualUsada() + " / " + d.getTamanoMemoriaVirtual());
         if (modeloDisco.getRowCount() != total) modeloDisco.setRowCount(total);
         int inicioVirtual = total - d.getTamanoMemoriaVirtual();
         String[] duenosVirtuales = new String[total];
