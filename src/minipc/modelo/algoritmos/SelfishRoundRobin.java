@@ -7,10 +7,11 @@ import minipc.modelo.BCP;
 import minipc.modelo.ColaTrabajo;
 
 /**
- * Selfish Round Robin: los procesos aceptados se turnan la CPU con Round Robin. Los nuevos
- * esperan afuera; su prioridad sube a ritmo "a" y la de los aceptados a ritmo "b". Un nuevo
- * entra a la rotación cuando su prioridad alcanza la de los aceptados.
- * Con b = 0 se comporta como RR; con b >= a, como FCFS.
+ * Selfish Round Robin (Stallings, Operating Systems: Internals and Design Principles, 9.ª ed.,
+ * problema 9.12 y figura 9.19): los procesos nuevos esperan y su prioridad sube desde 0 a la
+ * tasa "a"; cuando alcanza la prioridad de los aceptados, entran a compartir la CPU con Round
+ * Robin, y desde ahí su prioridad sube a una tasa menor "b" (0 <= b < a).
+ * Con b = 0 los nuevos entran enseguida y se comporta como RR.
  */
 public class SelfishRoundRobin implements AlgoritmoPlanificacion {
     public static final int TASA_NUEVOS_DEF = 2;
@@ -29,7 +30,7 @@ public class SelfishRoundRobin implements AlgoritmoPlanificacion {
 
     // E: quantum (int) - segundos por turno; tasaNuevos (int) - a; tasaAceptados (int) - b
     // S: no aplica (constructor)
-    // R: quantum >= 1, a >= 1 y b >= 0
+    // R: quantum >= 1 y 0 <= b < a
     public SelfishRoundRobin(int quantum, int tasaNuevos, int tasaAceptados){
         if (quantum < 1) throw new IllegalArgumentException("El quantum debe ser positivo");
         validarTasas(tasaNuevos, tasaAceptados);
@@ -40,10 +41,11 @@ public class SelfishRoundRobin implements AlgoritmoPlanificacion {
 
     // E: tasaNuevos (int) - a; tasaAceptados (int) - b
     // S: no aplica (void)
-    // R: lanza IllegalArgumentException si a < 1 o b < 0
+    // R: lanza IllegalArgumentException si no se cumple 0 <= b < a, como pide el libro
     public static void validarTasas(int tasaNuevos, int tasaAceptados){
-        if (tasaNuevos < 1 || tasaAceptados < 0)
-            throw new IllegalArgumentException("Selfish RR requiere tasa de nuevos (a) >= 1 y tasa de aceptados (b) >= 0");
+        if (tasaAceptados < 0 || tasaAceptados >= tasaNuevos)
+            throw new IllegalArgumentException("Selfish RR requiere 0 <= b < a: la tasa de los aceptados (b = "
+                + tasaAceptados + ") debe ser menor que la de los nuevos (a = " + tasaNuevos + ")");
     }
 
     @Override
