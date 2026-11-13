@@ -117,8 +117,7 @@ public class CPU {
         PC = PC + 1;
     }
 
-    // Correccion - Poll: se quitan los pesos; cada instrucción dura 1 segundo, así que
-    // cada tick hace fetch, decode y execute completos
+    // Cada instrucción dura 1 segundo: cada tick hace fetch, decode y execute completos
     // E: no aplica
     // S: no aplica (void) - avanza 1 segundo de CPU y ejecuta una instrucción
     // R: debe haber un proceso en la CPU
@@ -128,14 +127,12 @@ public class CPU {
         execute(decode(IR));
     }
 
-    // Correccion - Poll: ya no espera a que termine el peso; ejecuta tick por tick
     public void ejecutarTodo(){
         while(!programaTerminado()){
             tick();
         }
     }
 
-    // Correccion - Poll: ya no revisa los segundos restantes del peso
     public boolean programaTerminado(){
         return bcpActual == null || PC >= getLimite();
     }
@@ -400,7 +397,6 @@ public class CPU {
         }
     }
 
-    // Correccion - Poll: se quita INT 09H (entrada de teclado), en el proyecto 2 ya no se usa
     private void ejecutarINT(String codigo){
         if(codigo == null) return;
         switch (codigo) {

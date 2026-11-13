@@ -55,8 +55,6 @@ public class PanelDisco extends Tarjeta {
     // E: gestor (GestorProcesos) - puede ser null si todavía no hay programas
     // S: no aplica (void)
     // R: ninguna
-    // Correccion - Poll: la zona virtual del disco ya no marca partes de procesos ni sigue al PC
-    // (memoria virtual partida); queda reservada para la paginación
     public void actualizar(GestorProcesos gestor){
         if (gestor == null) {
             modeloDisco.setRowCount(0);
@@ -87,8 +85,6 @@ public class PanelDisco extends Tarjeta {
 
     /** Tabla de disco: índice en verde, memoria virtual en morado. */
     private static class RenderDisco extends DefaultTableCellRenderer {
-        // Correccion - Poll: se quitan el color por proceso en la zona virtual y la marca del PC
-        // (memoria virtual partida)
         @Override
         public Component getTableCellRendererComponent(JTable t, Object v, boolean s, boolean f, int r, int c){
             JLabel l = (JLabel) super.getTableCellRendererComponent(t, v, s, f, r, c);

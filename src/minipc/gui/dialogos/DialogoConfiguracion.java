@@ -32,8 +32,6 @@ public final class DialogoConfiguracion {
     // E: padre (Frame); configuracion (ConfiguracionSistema) - se modifica si el usuario guarda
     // S: boolean - true si se guardó y aplicó la configuración, false si se canceló
     // R: ninguna
-    // Correccion - Poll: la zona del S.O. y la memoria virtual se pueden editar; ya no se
-    // calculan con porcentajes fijos (25 % y 12,5 %)
     public static boolean mostrar(Frame padre, ConfiguracionSistema configuracion){
         boolean[] aplicada = {false};
         JDialog dlg = new JDialog(padre, "Configuración del Mini PC", true);

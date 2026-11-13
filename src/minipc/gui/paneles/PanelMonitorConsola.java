@@ -36,7 +36,6 @@ public class PanelMonitorConsola extends Tarjeta {
     // E: no aplica
     // S: no aplica (constructor)
     // R: ninguna
-    // Correccion - Poll: se quita la línea de entrada del teclado (etiqueta, campo y botón Enviar)
     public PanelMonitorConsola(){
         super("Monitor y consola", new Color(0x0F766E));
         areaMonitor = new JTextPane();

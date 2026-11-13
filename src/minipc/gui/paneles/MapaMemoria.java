@@ -50,8 +50,6 @@ public class MapaMemoria extends JComponent {
         return lista;
     }
 
-    // Correccion - Poll: cada bloque se dibuja con el alcance completo; se quitan la etiqueta
-    // "(+N virtual)" y el aviso "PC en memoria virtual" (memoria virtual partida)
     @Override
     protected void paintComponent(Graphics g){
         Graphics2D g2 = (Graphics2D) g.create();

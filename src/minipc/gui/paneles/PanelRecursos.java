@@ -54,8 +54,6 @@ public class PanelRecursos extends Tarjeta {
     // E: gestor (GestorProcesos) - puede ser null si todavía no hay programas
     // S: no aplica (void)
     // R: ninguna
-    // Correccion - Poll: la memoria usada se cuenta con el alcance completo del proceso
-    // (ya no hay parte en memoria virtual)
     // Correccion - Poll (observación PY1): la capacidad de la zona del S.O. se cuenta en bloques de
     // BCP (16 posiciones cada uno), no en posiciones sueltas
     public void actualizar(GestorProcesos gestor){

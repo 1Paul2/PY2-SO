@@ -36,7 +36,6 @@ public class PanelDispositivos extends Tarjeta {
     // E: configuracion (ConfiguracionSistema) - da la cantidad de CPU cuando no hay programas
     // S: no aplica (constructor)
     // R: ninguna
-    // Correccion - Poll: se quita el dispositivo "Teclado (entrada)" (INT 09H ya no se usa)
     public PanelDispositivos(ConfiguracionSistema configuracion){
         super("Dispositivos", Tema.MORADO);
         this.configuracion = configuracion;
@@ -86,7 +85,6 @@ public class PanelDispositivos extends Tarjeta {
     // E: gestor (GestorProcesos) - puede ser null si todavía no hay programas
     // S: no aplica (void)
     // R: ninguna
-    // Correccion - Poll: se quita el estado del dispositivo teclado
     public void actualizar(GestorProcesos gestor){
         int cantidad = gestor == null ? configuracion.getCantidadCpus() : gestor.getCantidadCpus();
         modeloCpus.setRowCount(cantidad);

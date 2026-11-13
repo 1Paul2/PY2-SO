@@ -67,8 +67,6 @@ public class BCP {
     private String dxTextoGuardado;    // nombre de archivo guardado en DX (MOV DX, "archivo.txt")
     private java.util.Map<String, Integer> punterosLectura;   // próxima línea a leer de cada archivo abierto
             
-        // Correccion - Poll: se quitan enRAM, baseVirtual y avisoVirtual (memoria virtual
-        // "mitad en RAM, mitad en disco"; se rehace con paginación)
         // E: idProceso (int) - identificador del proceso; estado (String)
         // S: no aplica (constructor)
         // R: ninguna
@@ -330,7 +328,6 @@ public class BCP {
             return sb.append("]").toString();
         }
 
-        // Correccion - Poll: se quitan los campos RAM y Virtual (memoria virtual partida)
         // Correccion - Poll (observación PY1): reemplaza a aTextoMemoria(), que juntaba todo el BCP en
         // un solo texto para una sola posición. Ahora cada elemento del BCP tiene su propia posición
         // en la zona del S.O., en el orden de CAMPOS_MEMORIA
