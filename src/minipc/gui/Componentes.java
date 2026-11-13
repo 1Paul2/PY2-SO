@@ -340,4 +340,73 @@ public final class Componentes {
         l.setForeground(Tema.TEXTO);
         return l;
     }
+    // E: doc (StyledDocument), texto (String), color (Color), negrita y cursiva (boolean)
+    // S: no aplica (void)
+    // R: agrega el texto al final con la fuente monoespaciada del tema
+    public static void agregarTexto(javax.swing.text.StyledDocument doc, String texto, Color color, boolean negrita, boolean cursiva){
+        javax.swing.text.SimpleAttributeSet a = new javax.swing.text.SimpleAttributeSet();
+        javax.swing.text.StyleConstants.setFontFamily(a, Tema.MONO_NORMAL.getFamily());
+        javax.swing.text.StyleConstants.setFontSize(a, 13);
+        javax.swing.text.StyleConstants.setForeground(a, color);
+        javax.swing.text.StyleConstants.setBold(a, negrita);
+        javax.swing.text.StyleConstants.setItalic(a, cursiva);
+        try {
+            doc.insertString(doc.getLength(), texto, a);
+        } catch (javax.swing.text.BadLocationException ignorada) { }
+    }
+
+    // ======================= Sección desplegable =======================
+
+    /** Tarjeta cuyo contenido se muestra u oculta al hacer clic en el título (▸ / ▾). */
+    public static class Desplegable extends JPanel {
+        private final JLabel lblTitulo;
+        private final JComponent contenido;
+        private String titulo;
+        private boolean abierto;
+
+        // E: titulo (String), acento (Color), contenido (JComponent), abierto (boolean) - estado inicial
+        // S: no aplica (constructor)
+        // R: ninguna
+        public Desplegable(String titulo, Color acento, JComponent contenido, boolean abierto){
+            super(new BorderLayout(0, 8));
+            setOpaque(false);
+            setBorder(new BordeRedondeado(acento));
+            this.contenido = contenido;
+            lblTitulo = new JLabel();
+            lblTitulo.setFont(Tema.TITULO_CARD);
+            lblTitulo.setForeground(Tema.TEXTO);
+            lblTitulo.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            lblTitulo.setToolTipText("Clic para mostrar u ocultar");
+            lblTitulo.addMouseListener(new MouseAdapter() {
+                @Override public void mouseClicked(MouseEvent e){ setAbierto(!Desplegable.this.abierto); }
+            });
+            add(lblTitulo, BorderLayout.NORTH);
+            add(contenido, BorderLayout.CENTER);
+            this.titulo = titulo;
+            setAbierto(abierto);
+        }
+
+        public void setTitulo(String titulo){
+            this.titulo = titulo;
+            lblTitulo.setText((abierto ? "▾  " : "▸  ") + titulo);
+        }
+
+        public void setAbierto(boolean abierto){
+            this.abierto = abierto;
+            contenido.setVisible(abierto);
+            setTitulo(titulo);
+            revalidate();
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g){
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setColor(Tema.TARJETA);
+            g2.fill(new RoundRectangle2D.Float(1, 1, getWidth() - 2, getHeight() - 2, 16, 16));
+            g2.dispose();
+            super.paintComponent(g);
+        }
+    }
 }
