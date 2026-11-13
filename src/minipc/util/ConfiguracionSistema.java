@@ -50,7 +50,11 @@ public class ConfiguracionSistema {
     private int memoriaVirtual = MEMORIA_VIRTUAL_DEF;
     private int cantidadCpus = 1;
     private String algoritmoCpu = "FCFS";
+    // Cada algoritmo con turnos tiene su propio quantum (antes era uno solo compartido)
     private int quantumRR = 2;
+    private int quantumSRR = 2;
+    private int quantumLottery = 2;
+    private int quantumMLFQ = 2;       // quantum del primer nivel; se duplica en cada nivel
     private minipc.hardware.EstrategiaMemoria estrategiaMemoria = minipc.hardware.EstrategiaMemoria.FIRST_FIT;
     private int tamanoPagina = 8;
     private int tamanoParticion = 32;
@@ -94,6 +98,13 @@ public class ConfiguracionSistema {
         validarAlgoritmoCpu(algoritmo);
         int quantum = leerEntero(p, "quantumRR", 2);
         validarQuantumRR(quantum);
+        // Un config.txt anterior solo tiene quantumRR: los demás toman ese mismo valor
+        int qSRR = leerEntero(p, "quantumSRR", quantum);
+        int qLottery = leerEntero(p, "quantumLottery", quantum);
+        int qMLFQ = leerEntero(p, "quantumMLFQ", quantum);
+        validarQuantumRR(qSRR);
+        validarQuantumRR(qLottery);
+        validarQuantumRR(qMLFQ);
         int niveles = leerEntero(p, "nivelesMLFQ", 3);
         int boost = leerEntero(p, "periodoBoostMLFQ", 20);
         validarMLFQ(niveles, boost);
@@ -109,6 +120,9 @@ public class ConfiguracionSistema {
         setConfiguracionMemoria(mp, ms, as, mv, estrategia, pagina, particion, lista);
         cantidadCpus = cpus;
         quantumRR = quantum;
+        quantumSRR = qSRR;
+        quantumLottery = qLottery;
+        quantumMLFQ = qMLFQ;
         nivelesMLFQ = niveles;
         periodoBoostMLFQ = boost;
         tasaNuevosSRR = tasaA;
@@ -128,6 +142,9 @@ public class ConfiguracionSistema {
         p.setProperty("cantidadCpus", String.valueOf(cantidadCpus));
         p.setProperty("algoritmoCpu", algoritmoCpu);
         p.setProperty("quantumRR", String.valueOf(quantumRR));
+        p.setProperty("quantumSRR", String.valueOf(quantumSRR));
+        p.setProperty("quantumLottery", String.valueOf(quantumLottery));
+        p.setProperty("quantumMLFQ", String.valueOf(quantumMLFQ));
         p.setProperty("estrategiaMemoria", estrategiaMemoria.name());
         p.setProperty("tamanoPagina", String.valueOf(tamanoPagina));
         p.setProperty("tamanoParticion", String.valueOf(tamanoParticion));
@@ -192,6 +209,40 @@ public class ConfiguracionSistema {
         if (quantum < 1) throw new IllegalArgumentException("El quantum debe ser positivo");
     }
     public int getQuantumRR(){ return quantumRR; }
+
+    // E: algoritmo (String) - nombre del algoritmo, como "RR"
+    // S: boolean - true si ese algoritmo reparte la CPU por turnos de quantum
+    // R: ninguna
+    public static boolean usaQuantum(String algoritmo){
+        return "RR".equals(algoritmo) || "SRR".equals(algoritmo) || "Lottery".equals(algoritmo) || "MLFQ".equals(algoritmo);
+    }
+
+    // E: algoritmo (String) - RR, SRR, Lottery o MLFQ
+    // S: int - el quantum de ese algoritmo (en MLFQ, el del primer nivel)
+    // R: lanza IllegalArgumentException si el algoritmo no usa quantum
+    public int getQuantum(String algoritmo){
+        switch (algoritmo) {
+            case "RR":      return quantumRR;
+            case "SRR":     return quantumSRR;
+            case "Lottery": return quantumLottery;
+            case "MLFQ":    return quantumMLFQ;
+            default: throw new IllegalArgumentException(algoritmo + " no usa quantum");
+        }
+    }
+
+    // E: algoritmo (String) - RR, SRR, Lottery o MLFQ; quantum (int) - segundos por turno
+    // S: no aplica (void)
+    // R: quantum >= 1; lanza IllegalArgumentException si el algoritmo no usa quantum
+    public void setQuantum(String algoritmo, int quantum){
+        validarQuantumRR(quantum);
+        switch (algoritmo) {
+            case "RR":      quantumRR = quantum; break;
+            case "SRR":     quantumSRR = quantum; break;
+            case "Lottery": quantumLottery = quantum; break;
+            case "MLFQ":    quantumMLFQ = quantum; break;
+            default: throw new IllegalArgumentException(algoritmo + " no usa quantum");
+        }
+    }
     public void setQuantumRR(int quantum){
         validarQuantumRR(quantum);
         quantumRR = quantum;
@@ -214,7 +265,7 @@ public class ConfiguracionSistema {
 
     // E: tasaNuevos (int) - a; tasaAceptados (int) - b
     // S: no aplica (void)
-    // R: a >= 1 y b >= 0
+    // R: 0 <= b < a
     public void setParametrosSRR(int tasaNuevos, int tasaAceptados){
         SelfishRoundRobin.validarTasas(tasaNuevos, tasaAceptados);
         tasaNuevosSRR = tasaNuevos;
