@@ -58,8 +58,7 @@ public class PanelCola extends Tarjeta {
     private JPanel crearLeyendaEstados(){
         JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 6));
         p.setOpaque(false);
-        for (String e : new String[]{"Nuevo", "Preparado", "Ejecución", "En espera", "Suspendido en espera",
-                                     "Suspendido preparado", BCP.FINALIZADO, BCP.FINALIZADO_ERROR}) {
+        for (String e : new String[]{"Nuevo", "Preparado", "Ejecución", "En espera", BCP.FINALIZADO, BCP.FINALIZADO_ERROR}) {
             Distintivo d = new Distintivo();
             d.setEstado(e);
             p.add(d);

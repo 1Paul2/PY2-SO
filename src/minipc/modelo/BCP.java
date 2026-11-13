@@ -21,11 +21,9 @@ import java.util.ArrayList;
  * de la CPU capturados al momento de invocar capturaEstado().
  */
 public class BCP {
-    // Modelo de 7 estados (Stallings, cap. 3): Nuevo, Preparado, Ejecución, En espera,
-    // Suspendido en espera (bloqueado y fuera de memoria), Suspendido preparado
-    // (ya ocurrió su evento pero sigue fuera de memoria) y Finalizado.
-    public static final String SUSPENDIDO_ESPERA = "Suspendido en espera";
-    public static final String SUSPENDIDO_PREPARADO = "Suspendido preparado";
+    // Modelo de 5 estados (Stallings, cap. 3): Nuevo, Preparado, Ejecución, En espera y Finalizado.
+    // En este simulador ningún proceso se bloquea (no hay entrada de teclado y las interrupciones
+    // duran 1 s), así que "En espera" queda como parte del modelo pero no se usa.
     // Correccion - Poll (observación PY1): un proceso que termina por un error (pila, salto,
     // acceso a memoria) se distingue del que terminó bien con INT 20H o al llegar al final
     public static final String FINALIZADO = "Finalizado";

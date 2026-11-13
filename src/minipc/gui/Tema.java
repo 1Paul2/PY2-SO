@@ -95,8 +95,6 @@ public final class Tema {
             case "Preparado":return new Color[]{AZUL, AZUL_CLARO};
             case "Ejecución":return new Color[]{VERDE_OSCURO, VERDE_CLARO};
             case "En espera":return new Color[]{AMBAR, AMBAR_CLARO};
-            case "Suspendido en espera": return new Color[]{MORADO, MORADO_CLARO};
-            case "Suspendido preparado": return new Color[]{new Color(0x9333EA), new Color(0xF3E8FF)};
             case "Finalizado":return new Color[]{new Color(0x475569), new Color(0xE2E8F0)};
             case "Finalizado con error":return new Color[]{ROJO, ROJO_CLARO};
             default:return new Color[]{GRIS, GRIS_CLARO};
