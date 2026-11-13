@@ -9,6 +9,8 @@ package minipc.gui.dialogos;
 
 import java.awt.*;
 import java.io.File;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import minipc.gui.Componentes;
@@ -43,10 +45,29 @@ public final class DialogoConfiguracion {
         JComboBox<String> algoritmoCpu = new JComboBox<>(new String[]{"FCFS", "SRT", "SPN", "RR", "HRRN", "SRR", "Lottery", "Prioridad", "Guaranteed", "MLFQ"});
         algoritmoCpu.setSelectedItem(configuracion.getAlgoritmoCpu());
         campos.add(Componentes.etiqueta("Algoritmo de CPU")); campos.add(algoritmoCpu);
-        JSpinner quantumRR = new JSpinner(new SpinnerNumberModel(configuracion.getQuantumRR(), 1, Integer.MAX_VALUE, 1));
-        quantumRR.setEnabled(("RR".equals(algoritmoCpu.getSelectedItem()) || "SRR".equals(algoritmoCpu.getSelectedItem()) || "Lottery".equals(algoritmoCpu.getSelectedItem()) || "MLFQ".equals(algoritmoCpu.getSelectedItem())));
-        algoritmoCpu.addActionListener(e -> quantumRR.setEnabled(("RR".equals(algoritmoCpu.getSelectedItem()) || "SRR".equals(algoritmoCpu.getSelectedItem()) || "Lottery".equals(algoritmoCpu.getSelectedItem()) || "MLFQ".equals(algoritmoCpu.getSelectedItem()))));
-        campos.add(Componentes.etiqueta("Quantum RR / SRR / Lottery / base MLFQ (s)")); campos.add(quantumRR);
+        // Un solo campo de quantum, pero cada algoritmo guarda el suyo: al cambiar de algoritmo se
+        // guarda el valor del anterior y se muestra el del nuevo
+        Map<String, Integer> quanta = new LinkedHashMap<>();
+        for (String a : new String[]{"RR", "SRR", "Lottery", "MLFQ"}) quanta.put(a, configuracion.getQuantum(a));
+        JSpinner quantum = new JSpinner(new SpinnerNumberModel(1, 1, Integer.MAX_VALUE, 1));
+        JLabel lblQuantum = Componentes.etiqueta("Quantum (s)");
+        String[] anterior = {null};
+        Runnable mostrarQuantum = () -> {
+            if (anterior[0] != null && ConfiguracionSistema.usaQuantum(anterior[0])) {
+                try { quantum.commitEdit(); } catch (java.text.ParseException ignorada) { }
+                quanta.put(anterior[0], (Integer) quantum.getValue());
+            }
+            String algoritmo = (String) algoritmoCpu.getSelectedItem();
+            boolean usa = ConfiguracionSistema.usaQuantum(algoritmo);
+            quantum.setEnabled(usa);
+            if (usa) quantum.setValue(quanta.get(algoritmo));
+            lblQuantum.setText(!usa ? "Quantum (" + algoritmo + " no lo usa)"
+                : "MLFQ".equals(algoritmo) ? "Quantum del primer nivel de MLFQ (s)" : "Quantum de " + algoritmo + " (s)");
+            anterior[0] = algoritmo;
+        };
+        algoritmoCpu.addActionListener(e -> mostrarQuantum.run());
+        mostrarQuantum.run();
+        campos.add(lblQuantum); campos.add(quantum);
         JSpinner nivelesMLFQ = new JSpinner(new SpinnerNumberModel(configuracion.getNivelesMLFQ(), 2, 8, 1));
         JSpinner boostMLFQ = new JSpinner(new SpinnerNumberModel(configuracion.getPeriodoBoostMLFQ(), 1, Integer.MAX_VALUE, 1));
         Runnable habilitarMLFQ = () -> {
@@ -58,10 +79,18 @@ public final class DialogoConfiguracion {
         habilitarMLFQ.run();
         campos.add(Componentes.etiqueta("Niveles MLFQ (2 a 8)")); campos.add(nivelesMLFQ);
         campos.add(Componentes.etiqueta("Promoción global MLFQ (s)")); campos.add(boostMLFQ);
+        // Como en el libro (Stallings, problema 9.12): 0 <= b < a. El máximo de b se ajusta a a - 1
         JSpinner tasaNuevosSRR = new JSpinner(new SpinnerNumberModel(configuracion.getTasaNuevosSRR(), 1, 100, 1));
-        JSpinner tasaAceptadosSRR = new JSpinner(new SpinnerNumberModel(configuracion.getTasaAceptadosSRR(), 0, 100, 1));
-        tasaNuevosSRR.setToolTipText("Cuánto sube por segundo la prioridad de un proceso nuevo");
-        tasaAceptadosSRR.setToolTipText("Cuánto sube por segundo la prioridad de los aceptados. 0 = como RR; b >= a = como FCFS");
+        SpinnerNumberModel modeloB = new SpinnerNumberModel(configuracion.getTasaAceptadosSRR(), 0,
+            configuracion.getTasaNuevosSRR() - 1, 1);
+        JSpinner tasaAceptadosSRR = new JSpinner(modeloB);
+        tasaNuevosSRR.addChangeListener(e -> {
+            int a = (Integer) tasaNuevosSRR.getValue();
+            modeloB.setMaximum(a - 1);
+            if ((Integer) modeloB.getValue() > a - 1) modeloB.setValue(a - 1);
+        });
+        tasaNuevosSRR.setToolTipText("a: cuánto sube por segundo la prioridad de un proceso nuevo mientras espera");
+        tasaAceptadosSRR.setToolTipText("b: cuánto sube por segundo la prioridad de los aceptados; debe ser menor que a (0 = como RR)");
         Runnable habilitarSRR = () -> {
             boolean seleccionado = "SRR".equals(algoritmoCpu.getSelectedItem());
             tasaNuevosSRR.setEnabled(seleccionado);
@@ -70,7 +99,7 @@ public final class DialogoConfiguracion {
         algoritmoCpu.addActionListener(e -> habilitarSRR.run());
         habilitarSRR.run();
         campos.add(Componentes.etiqueta("Tasa nuevos SRR (a)")); campos.add(tasaNuevosSRR);
-        campos.add(Componentes.etiqueta("Tasa aceptados SRR (b)")); campos.add(tasaAceptadosSRR);
+        campos.add(Componentes.etiqueta("Tasa aceptados SRR (b < a)")); campos.add(tasaAceptadosSRR);
         JTextField mp = campo(configuracion.getMemoriaPrincipal());
         JTextField ms = campo(configuracion.getMemoriaSistema());
         JTextField as = campo(configuracion.getAlmacenamientoSecundario());
@@ -130,11 +159,13 @@ public final class DialogoConfiguracion {
                 try {
                     configuracion.cargarDesdeArchivo(sel.getSelectedFile());
                     cantidadCpus.setValue(configuracion.getCantidadCpus());
+                    anterior[0] = null;   // el valor del campo es del archivo anterior: no guardarlo
+                    for (String a : quanta.keySet()) quanta.put(a, configuracion.getQuantum(a));
                     algoritmoCpu.setSelectedItem(configuracion.getAlgoritmoCpu());
-                    quantumRR.setValue(configuracion.getQuantumRR());
+                    mostrarQuantum.run();
                     nivelesMLFQ.setValue(configuracion.getNivelesMLFQ());
                     boostMLFQ.setValue(configuracion.getPeriodoBoostMLFQ());
-                    tasaNuevosSRR.setValue(configuracion.getTasaNuevosSRR());
+                    tasaNuevosSRR.setValue(configuracion.getTasaNuevosSRR());   // ajusta también el máximo de b
                     tasaAceptadosSRR.setValue(configuracion.getTasaAceptadosSRR());
                     mp.setText(String.valueOf(configuracion.getMemoriaPrincipal()));
                     ms.setText(String.valueOf(configuracion.getMemoriaSistema()));
@@ -153,7 +184,10 @@ public final class DialogoConfiguracion {
         aplicar.addActionListener(e -> {
             try {
                 cantidadCpus.commitEdit();
-                if (quantumRR.isEnabled()) quantumRR.commitEdit();
+                if (quantum.isEnabled()) {
+                    quantum.commitEdit();
+                    quanta.put((String) algoritmoCpu.getSelectedItem(), (Integer) quantum.getValue());
+                }
                 if (nivelesMLFQ.isEnabled()) {
                     nivelesMLFQ.commitEdit();
                     boostMLFQ.commitEdit();
@@ -170,7 +204,7 @@ public final class DialogoConfiguracion {
                     particiones.getText());
                 configuracion.setCantidadCpus(((Number) cantidadCpus.getValue()).intValue());
                 configuracion.setAlgoritmoCpu((String) algoritmoCpu.getSelectedItem());
-                configuracion.setQuantumRR((Integer) quantumRR.getValue());
+                for (Map.Entry<String, Integer> q : quanta.entrySet()) configuracion.setQuantum(q.getKey(), q.getValue());
                 configuracion.setParametrosMLFQ((Integer) nivelesMLFQ.getValue(), (Integer) boostMLFQ.getValue());
                 configuracion.setParametrosSRR((Integer) tasaNuevosSRR.getValue(), (Integer) tasaAceptadosSRR.getValue());
                 configuracion.guardarEnArchivo(new File(ConfiguracionSistema.ARCHIVO_POR_DEFECTO));
