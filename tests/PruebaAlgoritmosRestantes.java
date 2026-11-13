@@ -17,7 +17,7 @@ public class PruebaAlgoritmosRestantes {
         c.setTamanos(2048, 400, 4096, 0);
         c.setCantidadCpus(cpus);
         c.setAlgoritmoCpu(algoritmo);
-        c.setQuantumRR(2);
+        for (String a : new String[]{"RR", "SRR", "Lottery", "MLFQ"}) c.setQuantum(a, 2);
         c.setParametrosMLFQ(3, boost);
         return new GestorProcesos(c);
     }
@@ -147,17 +147,29 @@ public class PruebaAlgoritmosRestantes {
         ConfiguracionSistema c = new ConfiguracionSistema();
         c.setAlgoritmoCpu("MLFQ");
         c.setParametrosMLFQ(5, 37);
-        c.setQuantumRR(Integer.MAX_VALUE);
+        c.setQuantum("MLFQ", Integer.MAX_VALUE);
+        c.setQuantum("RR", 3);
+        c.setQuantum("SRR", 4);
+        c.setQuantum("Lottery", 5);
         var temporal = Files.createTempFile("mlfq", ".txt");
         try {
             c.guardarEnArchivo(temporal.toFile());
             ConfiguracionSistema copia = new ConfiguracionSistema();
             copia.cargarDesdeArchivo(temporal.toFile());
+            // Cada algoritmo tiene su propio quantum: cambiar uno no cambia los demás
+            verificar(copia.getQuantum("RR") == 3 && copia.getQuantum("SRR") == 4 && copia.getQuantum("Lottery") == 5
+                && copia.getQuantum("MLFQ") == Integer.MAX_VALUE, "Quantum propio de cada algoritmo");
+            verificar(ConfiguracionSistema.usaQuantum("RR") && !ConfiguracionSistema.usaQuantum("FCFS"), "Algoritmos con quantum");
             verificar(copia.getNivelesMLFQ() == 5 && copia.getPeriodoBoostMLFQ() == 37, "Persistir parámetros");
             verificar(new GestorProcesos(copia).getPlanificador().getAlgoritmo().getNombre().equals("MLFQ"), "Aplicar configuración");
             Files.writeString(temporal, "memoriaPrincipal=256\nmemoriaSistema=80\n");
             copia.cargarDesdeArchivo(temporal.toFile());
             verificar(copia.getAlgoritmoCpu().equals("FCFS") && copia.getNivelesMLFQ() == 3, "Configuración antigua");
+            // Un config.txt de antes solo tenía quantumRR: los cuatro algoritmos toman ese valor
+            Files.writeString(temporal, "memoriaPrincipal=256\nmemoriaSistema=80\nquantumRR=4\n");
+            copia.cargarDesdeArchivo(temporal.toFile());
+            verificar(copia.getQuantum("RR") == 4 && copia.getQuantum("SRR") == 4 && copia.getQuantum("Lottery") == 4
+                && copia.getQuantum("MLFQ") == 4, "Quantum de un config.txt antiguo");
             try {
                 c.setParametrosMLFQ(9, 0);
                 throw new AssertionError("Parámetros inválidos aceptados");
