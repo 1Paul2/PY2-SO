@@ -84,21 +84,21 @@ public class GestorProcesos {
         } else if ("SPN".equals(c.getAlgoritmoCpu())) {
             planificador.setAlgoritmo(new minipc.modelo.algoritmos.SPN());
         } else if ("RR".equals(c.getAlgoritmoCpu())) {
-            planificador.setAlgoritmo(new minipc.modelo.algoritmos.RoundRobin(c.getQuantumRR()));
+            planificador.setAlgoritmo(new minipc.modelo.algoritmos.RoundRobin(c.getQuantum("RR")));
         } else if ("HRRN".equals(c.getAlgoritmoCpu())) {
             planificador.setAlgoritmo(new minipc.modelo.algoritmos.HRRN());
         } else if ("SRR".equals(c.getAlgoritmoCpu())) {
             planificador.setAlgoritmo(new minipc.modelo.algoritmos.SelfishRoundRobin(
-                c.getQuantumRR(), c.getTasaNuevosSRR(), c.getTasaAceptadosSRR()));
+                c.getQuantum("SRR"), c.getTasaNuevosSRR(), c.getTasaAceptadosSRR()));
         } else if ("Lottery".equals(c.getAlgoritmoCpu())) {
-            planificador.setAlgoritmo(new minipc.modelo.algoritmos.Lottery(c.getQuantumRR()));
+            planificador.setAlgoritmo(new minipc.modelo.algoritmos.Lottery(c.getQuantum("Lottery")));
         } else if ("Prioridad".equals(c.getAlgoritmoCpu())) {
             planificador.setAlgoritmo(new minipc.modelo.algoritmos.Prioridad());
         } else if ("Guaranteed".equals(c.getAlgoritmoCpu())) {
             planificador.setAlgoritmo(new minipc.modelo.algoritmos.GuaranteedScheduling());
         } else if ("MLFQ".equals(c.getAlgoritmoCpu())) {
             planificador.setAlgoritmo(new minipc.modelo.algoritmos.MultilevelFeedbackQueue(
-                c.getNivelesMLFQ(), c.getQuantumRR(), c.getPeriodoBoostMLFQ()));
+                c.getNivelesMLFQ(), c.getQuantum("MLFQ"), c.getPeriodoBoostMLFQ()));
         }
     }
 

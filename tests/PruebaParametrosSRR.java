@@ -4,7 +4,6 @@ import java.util.List;
 import minipc.modelo.GestorProcesos;
 import minipc.modelo.Instruccion;
 import minipc.modelo.algoritmos.AlgoritmoPlanificacion;
-import minipc.modelo.algoritmos.FCFS;
 import minipc.modelo.algoritmos.RoundRobin;
 import minipc.modelo.algoritmos.SelfishRoundRobin;
 import minipc.util.ConfiguracionSistema;
@@ -12,7 +11,8 @@ import minipc.util.ParserASM;
 
 /**
  * Verifica que las tasas a y b de Selfish RR cambian el comportamiento como dice la teoría:
- * con b = 0 es igual a RR, con b >= a es igual a FCFS, y que se guardan en config.txt.
+ * con b = 0 es igual a RR, que solo se aceptan tasas con 0 <= b < a (Stallings, problema 9.12),
+ * que un b más alto hace esperar más a los nuevos, y que se guardan en config.txt.
  */
 public class PruebaParametrosSRR {
 
@@ -46,25 +46,40 @@ public class PruebaParametrosSRR {
         for (int cpus = 1; cpus <= 2; cpus++) {
             for (int q = 1; q <= 3; q++) {
                 String rr = lineaDeTiempo(new RoundRobin(q), cpus);
-                String fcfs = lineaDeTiempo(new FCFS(), cpus);
                 String porDefecto = lineaDeTiempo(new SelfishRoundRobin(q), cpus);
                 String explicito = lineaDeTiempo(new SelfishRoundRobin(q, 2, 1), cpus);
                 verificar(porDefecto.equals(explicito), "a=2, b=1 debe ser lo mismo que el SRR original");
                 verificar(lineaDeTiempo(new SelfishRoundRobin(q, 2, 0), cpus).equals(rr), "b=0 debe comportarse como RR (q=" + q + ", " + cpus + " CPU)");
-                if (cpus == 1) {
-                    verificar(lineaDeTiempo(new SelfishRoundRobin(q, 1, 1), cpus).equals(fcfs), "b=a debe comportarse como FCFS (q=" + q + ")");
-                    verificar(lineaDeTiempo(new SelfishRoundRobin(q, 2, 5), cpus).equals(fcfs), "b>a debe comportarse como FCFS (q=" + q + ")");
-                }
                 if (cpus == 1 && q == 2) {
                     System.out.println("RR q=2:\n" + rr + "SRR a=2 b=1:\n" + porDefecto + "SRR a=2 b=0:\n"
-                        + lineaDeTiempo(new SelfishRoundRobin(q, 2, 0), cpus) + "SRR a=1 b=1:\n"
-                        + lineaDeTiempo(new SelfishRoundRobin(q, 1, 1), cpus) + "FCFS:\n" + fcfs);
+                        + lineaDeTiempo(new SelfishRoundRobin(q, 2, 0), cpus) + "SRR a=4 b=3:\n"
+                        + lineaDeTiempo(new SelfishRoundRobin(q, 4, 3), cpus));
                 }
             }
         }
 
         // Validación de las tasas
-        for (int[] malas : new int[][]{{0, 1}, {-1, 0}, {2, -1}}) {
+        // Con a fijo, cuanto más alto es b, más tarde empiezan los que llegan después (esperan más afuera)
+        for (int q = 1; q <= 3; q++) {
+            int anterior = -1;
+            for (int b = 0; b <= 3; b++) {
+                GestorProcesos g = new GestorProcesos(256, 160, 512, 64, 1);
+                g.getPlanificador().setAlgoritmo(new SelfishRoundRobin(q, 4, b));
+                for (int[] p : new int[][]{{0, 8}, {1, 4}, {2, 4}}) {
+                    List<Instruccion> programa = new ArrayList<>();
+                    for (int k = 1; k < p[1]; k++) programa.add(ParserASM.procesarLinea("INC AX"));
+                    programa.add(ParserASM.procesarLinea("INT 20H"));
+                    g.cargarPrograma(programa, "p" + p[0] + ".asm", p[0]);
+                }
+                g.ejecutarTodo();
+                int inicios = g.getTodosLosProcesos().get(1).getTiempoInicio() + g.getTodosLosProcesos().get(2).getTiempoInicio();
+                verificar(inicios >= anterior, "Con b = " + b + " los nuevos no deben entrar antes que con b = " + (b - 1) + " (q=" + q + ")");
+                anterior = inicios;
+            }
+        }
+
+        // Como en el libro: 0 <= b < a. Se rechazan b negativo, b igual a a y b mayor que a
+        for (int[] malas : new int[][]{{0, 0}, {-1, 0}, {2, -1}, {1, 1}, {2, 2}, {2, 5}}) {
             try {
                 new SelfishRoundRobin(2, malas[0], malas[1]);
                 throw new AssertionError("Debió rechazar a=" + malas[0] + ", b=" + malas[1]);
@@ -85,6 +100,6 @@ public class PruebaParametrosSRR {
         GestorProcesos g = new GestorProcesos(leida);
         verificar("SRR".equals(g.getPlanificador().getAlgoritmo().getNombre()), "El gestor debe usar SRR");
 
-        System.out.println("OK: tasas de Selfish RR (por defecto, b=0 como RR, b>=a como FCFS, validación y config.txt)");
+        System.out.println("OK: tasas de Selfish RR (por defecto, b=0 como RR, 0 <= b < a como en el libro, validación y config.txt)");
     }
 }

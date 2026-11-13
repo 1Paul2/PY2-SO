@@ -90,11 +90,12 @@ public class PanelTarjetasCpu extends JPanel {
         int cantidad = gestor == null ? configuracion.getCantidadCpus() : gestor.getCantidadCpus();
         prepararTarjetas(cantidad);
         String algoritmo = configuracion.getAlgoritmoCpu();
-        boolean usaQuantum = "RR".equals(algoritmo) || "SRR".equals(algoritmo) || "Lottery".equals(algoritmo);
+        // En MLFQ el quantum cambia según el nivel del proceso, así que ahí se muestra el tiempo en CPU
+        boolean usaQuantum = ConfiguracionSistema.usaQuantum(algoritmo) && !"MLFQ".equals(algoritmo);
         for (int i = 0; i < cantidad; i++) {
             CPU cpu = gestor == null ? null : gestor.getCpu(i);
             int segundos = gestor == null ? 0 : gestor.getSegundosEnCpu(i);
-            tarjetas.get(i).mostrar(cpu, segundos, usaQuantum ? configuracion.getQuantumRR() : 0);
+            tarjetas.get(i).mostrar(cpu, segundos, usaQuantum ? configuracion.getQuantum(algoritmo) : 0);
         }
     }
 

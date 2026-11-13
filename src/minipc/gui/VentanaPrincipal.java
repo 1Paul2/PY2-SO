@@ -573,8 +573,9 @@ public class VentanaPrincipal extends JFrame {
 
     // S: String - el algoritmo de CPU con sus parámetros, p. ej. "Round Robin · q = 2"
     private String textoAlgoritmo(){
-        int q = configuracion.getQuantumRR();
-        switch (configuracion.getAlgoritmoCpu()) {
+        String algoritmo = configuracion.getAlgoritmoCpu();
+        int q = ConfiguracionSistema.usaQuantum(algoritmo) ? configuracion.getQuantum(algoritmo) : 0;
+        switch (algoritmo) {
             case "RR":      return "Round Robin · q = " + q;
             case "SRR":     return "Selfish RR · q = " + q + " · a = " + configuracion.getTasaNuevosSRR()
                                 + " · b = " + configuracion.getTasaAceptadosSRR();
